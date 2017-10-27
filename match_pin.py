@@ -1,4 +1,5 @@
-from jlu.astrometry.align import align, jay
+#from jlu.astrometry.align import align, jay
+from flystar.flystar import align , match, transforms
 import numpy as np
 from astropy.table import Table
 from astropy.io import fits
@@ -13,6 +14,8 @@ def match_all(lis_f, xkey='x', ykey='y'):
    
 
     _ref = Table.read(lis_lis[0], format='ascii.fixed_width')
+    #cut out low corr values sources from the reference catalog
+    _ref = _ref[_ref['corr'] > 0.95]
     xr = _ref[xkey]
     yr = _ref[ykey]
     if 'flux' in _ref.keys():
@@ -29,7 +32,7 @@ def match_all(lis_f, xkey='x', ykey='y'):
             _flux = _tab['flux']
         else:
             _flux = np.zeros(len(_ref))
-        idx1 , idx2 , dm, dr = align.match(_tab[xkey],_tab[ykey] ,_flux,  xr, yr, fr, 10)
+        idx1 , idx2 , dm, dr = align.match.match(_tab[xkey],_tab[ykey] ,_flux,  xr, yr, fr, 6)
         x[idx2,i] = _tab['x'][idx1]
         y[idx2,i] = _tab['y'][idx1]
         flux[idx2,i] = _tab['flux'][idx1]

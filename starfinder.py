@@ -38,7 +38,7 @@ def extract_im( imfile,xr, yr,fr, sigfile, psf_size, abs_thresh=15, corr=0.5, re
 
     
 
-def approx_loc(image, thresh=50, psf_size=30, flux_cut=10000, bkg=8, sat_level=40000):
+def approx_loc(image, thresh=50, psf_size=50, flux_cut=10000, bkg=8, sat_level=40000):
     im  = fits.open(image)[0].data
     det_mask = np.where(im > thresh)
     coo = np.indices(im.shape)
@@ -52,7 +52,7 @@ def approx_loc(image, thresh=50, psf_size=30, flux_cut=10000, bkg=8, sat_level=4
     for i in range(len(xpoints)):
         if pbool[i]:
             #add cludege for FLI vignetted images
-            if xpoints[i] > 3000 and xpoints[i] < 6000 and ypoints[i] > 1000 and ypoints[i] < 4000:
+            if xpoints[i] > 1000 and xpoints[i] < 4000 and ypoints[i] > 1000 and ypoints[i] < 4000:
                 dropbool = (xpoints - xpoints[i])**2 + (ypoints - ypoints[i])**2 < psf_size**2
                 pbool[dropbool] = False
                 #cutout = im[xpoints[i]-psf_size/2:xpoints[i]+psf_size/2, ypoints[i]-psf_size/2:ypoints[i]+psf_size/2]
