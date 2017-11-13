@@ -4,6 +4,7 @@ from astropy.table import Table
 import numpy as np
 import matplotlib.pyplot as plt 
 from jlu.util import statsIter as stats
+from jlu.util import statsIter
 from astropy.io import fits
 from scipy.optimize import minimize, leastsq
 
@@ -314,7 +315,7 @@ def simul_ave_fit(xlis, ylis, offsets, order=4, xerr=None, yerr = None, refin=Fa
         
         #print t.cy
         #import pdb;pdb.set_trace()
-        _t = transforms.LegTransform(xnin, ynin, xres, yres, order)#, weights=1/(xerr[i]**2+yerr[i]**2)**0.5)
+        _t = transforms.PolyTransform(xnin, ynin, xres, yres, order)#, weights=1/(xerr[i]**2+yerr[i]**2)**0.5)
         _dxn, _dyn = _t.evaluate(xnin, ynin)
         xn = xnin + _dxn
         yn = ynin + _dyn
@@ -334,7 +335,7 @@ def simul_ave_fit(xlis, ylis, offsets, order=4, xerr=None, yerr = None, refin=Fa
                 xr, yr, xnin, ynin, xres, yres, t  = analyze_stack.compare2square(xnin[gbool] , ynin[gbool], trim=False, gspace=168, fit_ord=0)
                 #print t.px, t.py
                 
-                _t = transforms.LegTransform(xnin, ynin, xres, yres, order)#,weights=1/(xerr**2+yerr**2)**0.5)
+                _t = transforms.PolyTransform(xnin, ynin, xres, yres, order)#,weights=1/(xerr**2+yerr**2)**0.5)
                 _dxn, _dyn = _t.evaluate(xnin, ynin)
                 xn = xnin - _dxn
                 yn = ynin - _dyn
@@ -378,7 +379,7 @@ def simul_ave_fit(xlis, ylis, offsets, order=4, xerr=None, yerr = None, refin=Fa
     xresall = np.array(xresall)
     yresall = np.array(yresall)
     
-    tall = transforms.LegTransform(xall, yall, xresall, yresall, order)
+    tall = transforms.PolyTransform(xall, yall, xresall, yresall, order)
     _dx, _dy = tall.evaluate(xall, yall)
     xwrong = _dx - xresall
     ywrong = _dy - yresall
@@ -555,9 +556,63 @@ def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=40
     _out = Table(data=[xmean[idx1], xerr[idx1], ymean[idx1], yerr[idx1], fave[idx2], ferr[idx2]], names=['x', 'xerr', 'y', 'yerr', 'flux', 'fluxerr'])
     _out.write(outf, format='ascii.fixed_width')
         
-        
 
-def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True):
+def trim_spat_ave(in_f='average_coo.txt', ref='../reference.txt', num_section_x=8, num_section_y=8, sig_fac=4):
+    '''
+    trims a set of average coordiants by fitting a 3rd order legendre polynomial between square coordinates and the measured coordinates
+    Residuals are 4-sigma clipped (using an iterative mean and std caclualtion) with the FOV split into a 10 x 10 
+    '''
+
+    coo = Table.read(in_f, format='ascii.fixed_width')
+    ref = Table.read(ref, format='ascii.fixed_width')
+    #cheat to align the coordinates, align point closest to the origin to be the origin
+    origin_ind = np.argmin(coo['x']**2+coo['y']**2)
+    _xoff = -1.0 * coo['x'][origin_ind]
+    _yoff = -1.0 * coo['y'][origin_ind]
+
+    xm = coo['x'] + _xoff
+    ym = coo['y'] + _yoff
+
+    idx1, idx2, dr, dm = match.match(xm, ym, np.ones(len(xm)), ref['x'], ref['y'], np.ones(len(ref)), 50)
+
+    #fit the legendre polynomial
+    t = transforms.LegTransform(ref['x'][idx2], ref['y'][idx2], xm[idx1], ym[idx1], 3)
+    xn, yn = t.evaluate(ref['x'][idx2], ref['y'][idx2])
+    xres = xn - xm[idx1]
+    yres = yn - ym[idx1]
+
+    bins_x = np.linspace(np.min(xm),np.max(xm), num=num_section_x + 1 )
+    bins_y = np.linspace(np.min(ym),np.max(ym), num=num_section_y + 1 )
+    outbool = np.zeros(len(coo), dtype='bool')
+    for i in range(len(bins_x)-1):
+        for j in range(len(bins_y)-1):
+            #first find all the stars that are in the current bin
+            sbool = (xm > bins_x[i])*(xm<bins_x[i+1])*(ym>bins_y[j])*(ym<bins_y[j+1])
+            print 'number of stars in this section are ', np.sum(sbool)
+            #find the mean delta and sigma in x and y, using iterative sigma clipping
+            ave_x, sig_x, nclipx = statsIter.mean_std_clip(xres[sbool], clipsig=3.0, return_nclip=True)
+            ave_y, sig_y, nclipy = statsIter.mean_std_clip(yres[sbool], clipsig=3.0, return_nclip=True)
+            #creates boolean 
+            good_bool = (xres < ave_x + sig_fac * sig_x)*(xres > ave_x - sig_fac * sig_x)*(yres < ave_y + sig_fac *sig_x)*(yres > ave_y - sig_fac * sig_x) * sbool
+            print('bad stars', len(good_bool[sbool]) - np.sum(good_bool))
+            for kk in range(len(good_bool)):
+                if good_bool[kk]:
+                    outbool[kk] = True
+    #now we can rewrite the coo file
+    good_coo = coo[outbool]
+    good_coo.write(in_f.replace('.txt', '_trim.txt'), format='ascii.fixed_width')
+
+    #redoo averaging?
+
+def trim_center(in_f, rad=25):
+    '''
+    trims stars within 25 pixels of the center of the detector
+    '''
+    coo = Table.read(in_f, format='ascii.fixed_width')
+    gb = np.abs(coo['x'] - 4088) > rad
+    coo = coo[gb]
+    coo.write(in_f, format='ascii.fixed_width')
+def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False):
     '''
     fits a single polynomial to averaged distoriton  data
     
@@ -629,6 +684,13 @@ def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True):
     plt.title('Res order '+str(order)+' file:'+coo_txt)
     plt.show()
 
+    if trim:
+        idx1, idx2, dr, dm = match.match(xnin, ynin, np.ones(len(xnin)), stack['x'], stack['y'], np.ones(len(stack)), 40)
+        gb = np.zeros(len(stack), dtype='bool')
+        gb[idx2] = True
+        st = stack[gb]
+        st.write(coo_txt, format='ascii.fixed_width')
+        
     if retrans:
         return _t
 
@@ -655,7 +717,7 @@ def mkrefcat(num_pin=43, gspace=168.0,  ang=-0.33):
 
 
 
-def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=4, dev_pat=True, renorm=True, rot_ang=None, sig_clip=True, debug=False, ind_fits=False):
+def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=4, dev_pat=True, renorm=True, rot_ang=None, sig_clip=True, debug=False, ind_fits=False, Niter=10):
     '''
     xlis -- list of x coordinates [nframes, npinholes]
     offsets --- list of offsets to translate between each frame
@@ -696,8 +758,8 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=
         #if cut_line:
         #    cbool = cbool * gbool * gbool2
         #cut out upper left corner, residuals are large
-        yline = xlis[i] * (5817.0-4774.0)/(1914.0-428.0) + 1343
-        gbool = ylis[i] < yline
+        #yline = xlis[i] * (5817.0-4774.0)/(1914.0-428.0) + 1343
+        #gbool = ylis[i] < yline
         cbool = np.ones(len(xlis[i]), dtype='bool')
         #need to rotate data to match the  reference
         _ang = np.deg2rad(rot_ang[i])
@@ -845,9 +907,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=
     
     init_guess = guess_co(offsets, order=order)
     res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, order, dev_pat))
-    #save the good paramters to an output file
-    _out = Table(data=[res[0]])
-    _out.write('fit.txt', format='ascii.basic')
+   
     xdatR, ydatR, xrefR, yrefR = com_mod(res[0], xln, yln, xrn, yrn, order=order, evaluate=True)
 
     xresIF = []
@@ -884,9 +944,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=
         _ya, _ye = stats.mean_std_clip(_yres)
         _gbool = (_xres < 3 * _xe + _xa) * (_xres > -3 * _xe + _xa) * (_yres < 3 * _ye + _ya) * (_yres > -3 * _ye + _ya)
         print('trimming ', len(_gbool) - np.sum(_gbool) ,' for frame ', i)
-        #gotta write useful text files
-        _oo = Table(data=[xln[i][_gbool], yln[i][_gbool],xrn[i][_gbool], yrn[i][_gbool]], names=['x','y','xr','yr'])
-        _oo.write('mout_'+str(i)+'.txt', format='ascii.basic')
+        
 
     #print('trimming ', len(tgbool) - np.sum(tgbool))
         
@@ -901,12 +959,79 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=
     yln = np.array(ylnN)
     yrn = np.array(yrnN)
     xrn = np.array(xrnN)
-    res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, order, dev_pat))
+    #res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, order, dev_pat))
     xdatR, ydatR, xrefR, yrefR = com_mod(res[0], xln, yln, xrn, yrn, order=order, evaluate=True)
         
-  
-  
+    #at this stage, we update the reference positions, with some gain g
+    #first match newest refrence xrefR, yrefR with the original reference text file...
+    g = 0.7
+    #first compute the dx/dy based on refid
+    for III in range(Niter):
+        idxN = []
+        idx_ref = []
+       #match each reference catalog to the original reference
+        xallR = np.ma.zeros((len(ref), len(xrefR)))
+        yallR = np.ma.zeros((len(ref), len(xrefR)))
+        xallM = np.ma.zeros((len(ref), len(xrefR)))
+        yallM = np.ma.zeros((len(ref), len(xrefR)))
+
+        for i in range(len(xrefR)):
+           idx1, idx2, dr, dm = match.match(xrefR[i], yrefR[i], np.ones(len(xrefR[i])), ref['x'], ref['y'], np.ones(len(ref)), 50)
+           idxN.append(idx1)
+           idx_ref.append(idx2)
+           xallR[idx2,i] = xrefR[i][idx1] 
+           yallR[idx2,i] = yrefR[i][idx1] 
+           xallM[idx2,i] = xdatR[i][idx1] 
+           yallM[idx2,i] = ydatR[i][idx1] 
+
+        _mask = xallR == 0.0
+        xallR.mask = _mask
+        yallR.mask = _mask
+        xallM.mask = _mask
+        yallM.mask = _mask
+
+        xave = np.mean(xallR, axis=1)
+        yave = np.mean(yallR, axis=1)
+        dx = np.mean(xallM-xallR, axis=1)
+        dy = np.mean(yallM-yallR, axis=1)
+        
+    
+        print('average delta of refernce coordinates')
+        print(np.mean(dx), np.mean(dy))
+        print('RMS scatter in change in reference coordinates')
+        print(np.std(dx), np.std(dy))
+        #import pdb;pdb.set_trace()
+        #now match to the reference and apply the deltas with gain factor g
+        xrnn = []
+        yrnn = []
+        
+        for gg in range(len(xrn)):
+            idx1, idx2 , dm, dr = match.match(xave, yave, np.ones(len(xave)), xrn[gg], yrn[gg], np.ones(len(xrn[gg])), 50)
+            _xrnn = xrn[gg]
+            _xrnn[idx2]=  _xrnn[idx2] +  dx[idx1]* g
+            _yrnn = yrn[gg]
+            _yrnn[idx2] = _yrnn[idx2] + dy[idx1]*g
+            xrnn.append(_xrnn)
+            yrnn.append(_yrnn)
+
+        #ERROR HERE FIRST FIT IS BAD--PROBABLY BAD RESIDUALS OR WORNG xrn/yrn on this round....
+        xrn = xrnn
+        yrn = yrnn
+
+        
+        #now we are done updating the reference cordinates, repeat the fit
+        res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, order, dev_pat))
+        xdatR, ydatR, xrefR, yrefR = com_mod(res[0], xln, yln, xrn, yrn, order=order, evaluate=True)
+
+    for i in range(len(xln)):
+    #gotta write useful text files
+        _oo = Table(data=[xln[i], yln[i],xrn[i], yrn[i]], names=['x','y','xr','yr'])
+        _oo.write('mout_'+str(i)+'.txt', format='ascii.basic')
+     #save the good paramters to an output file
+    _out = Table(data=[res[0]])
+    _out.write('fit.txt', format='ascii.basic')
             
+     
     xresIF = []
     yresIF = []
     xlall = []
@@ -1165,7 +1290,7 @@ def plot_lin_dist(ff='fit.txt', mlis='mout.lis', order=3):
        
 
 
-        analyze_stack.mkquiver(_m['x'], _m['y'], dx, dy, fig_n=12, title_s='Measured Distortion ', scale=10, scale_size=1, frac_plot=3, save_f='measured_dist.png', incolor=colors[int(i)], clear=False, scy=1150,scx=0,  xl=500, xh=6500, yh=5300, yl=300, xlab =r'$x_{m}$ (pixels)', ylab=r'$y_{m}$ (pixels)')
+        analyze_stack.mkquiver(_m['x'], _m['y'], dx, dy, fig_n=12, title_s='Measured Distortion ', scale=10, scale_size=1, frac_plot=6, save_f='measured_dist.png', incolor=colors[int(i)], clear=False, scy=1150,scx=0,  xl=500, xh=6500, yh=5300, yl=300, xlab =r'$x_{m}$ (pixels)', ylab=r'$y_{m}$ (pixels)')
 
         analyze_stack.mkquiver(_m['x'], _m['y'], xdatR[i] - xrefR[i], ydatR[i] - yrefR[i], fig_n=56+i, title_s='Stack '+str(i), scale=.3, scale_size=.02, frac_plot=1,save_f='residual_dist_ind'+str(i)+'.png', incolor=colors[int(i)], clear=False, scy=1150,scx=0,  xl=500, xh=6500, yh=5400, yl=300, xlab =r'$x_{m}$ (pixels)', ylab=r'$y_{m}$ (pixels)')
         analyze_stack.mkquiver(_m['x'], _m['y'], xdatR[i] - xrefR[i], ydatR[i] - yrefR[i], fig_n=55, title_s='Data - Model', scale=.3, scale_size=.02, frac_plot=1,  save_f='residual_dist_all.png', incolor=colors[int(i)], clear=False, scy=1150,scx=0,  xl=500, xh=6500, yh=5400, yl=300, xlab =r'$x_{m}$ (pixels)', ylab=r'$y_{m}$ (pixels)')
@@ -1205,7 +1330,7 @@ def plot_lin_dist(ff='fit.txt', mlis='mout.lis', order=3):
     plt.ylabel('Scale')
     plt.title('Variation in linear parameters')
     plt.legend(loc='upper left')
-    plt.xticks([0,1,2,3,4], ['0','1','2','3','4'])
+    plt.xticks([0,1,2,3,4,5,6,7,8], ['0','1','2','3','4', '5', '6','7','8'])
     plt.tight_layout()
 
     plt.figure(91)
@@ -1434,3 +1559,336 @@ def plot_4pv(in_f= 'var_trans_4p.txt'):
     plt.scatter(np.array(range(len(fourp)))*f_space, np.sqrt(fourp['a1']**2+fourp['a2']**2), s=3)
 
     plt.show()
+
+
+def fit_linear(meas, dither):
+    '''
+    meas is [Npinholes,  2, Ndithers]    array of measured pinhole positions
+    dither is array like with length Ndithers x 2.  It is the intitial guess for the dither location of that array
+    '''
+
+    #starting guess for the distortion terms (d) are that they are zero (no optical distoriotn)
+    
+
+    
+    pass
+
+def simul_wref_simple(xlis, ylis, offsets, order=4, trim_pin=True):
+    '''
+    xlis -- list of x coordinates [nframes, npinholes]
+    offsets --- list of offsets to translate between each frame
+
+    Trimming of the reference catalog occurs in 2 steps -- First step is to only keep pinholes that are in at least nmin images
+    Then we trim the image in pixel coordiantes to only smaple the SAME optical distortion
+    
+    '''
+
+    #for each position of the pinhole mask, fit a 4th? order Legendre polynomial.
+    xln = []
+    yln = []
+    xrn = []
+    yrn = []
+    refid = []
+    frameN = []
+    #first clean the data
+    if rot_ang is None:
+        rot_ang = np.zeros(len(xlis))
+
+    #hardcode for simplicity
+    #ymax = 3000
+    #ymin = 1041
+    #xmax = 6000
+    #xmin = 1041
+    
+    #create the reference coordinates if they are not input
+   
+    ref = Table.read('reference.txt', format='ascii.basic')
+    
+    for i in range(len(xlis)):
+        
+        #add in additional cut to get rid of "dark" streak due to lamp
+        #yline  = -0.1163 * xlis[i] + 1813
+        #gbool = (np.abs(yline - ylis[i]) >250)*((yline - ylis[i]) < 0)
+        #yline  = -0.13 * xlis[i] + 4612
+        #gbool2 = (np.abs(yline - ylis[i]) >250)*((yline - ylis[i]) > 0)
+        #if cut_line:
+        #    cbool = cbool * gbool * gbool2
+        #cut out upper left corner, residuals are large
+        #yline = xlis[i] * (5817.0-4774.0)/(1914.0-428.0) + 1343
+        gbool = ylis[i] < yline
+        cbool = np.ones(len(xlis[i]), dtype='bool')
+        #need to rotate data to match the  reference
+        _ang = np.deg2rad(rot_ang[i])
+        xang = np.cos(_ang) * xlis[i] - np.sin(_ang) * ylis[i]
+        yang = np.sin(_ang) * xlis[i] + np.cos(_ang) * ylis[i]
+        xo = np.cos(_ang) * offsets[i][0] - np.sin(_ang) * offsets[i][1]
+        yo = np.sin(_ang) * offsets[i][0] + np.cos(_ang) * offsets[i][1]
+        
+        idx1, idx2, drm, dr = match.match(xang[cbool] - xo, yang[cbool] - yo,np.zeros(len(xlis[i])), ref['x'], ref['y'], np.zeros(len(ref)),30)
+        #take out median translation and rematch
+        _dx = np.median(xang[cbool][idx1] - ref['x'][idx2])
+        _dy = np.median(yang[cbool][idx1] - ref['y'][idx2])
+        idx1N, idx2N, drm, dr = match.match(xang - _dx, yang- _dy,np.zeros(len(xlis[i])), ref['x'], ref['y'], np.zeros(len(ref)),100)
+        #assert len(idx1) > 350
+        assert len(idx1N) >= len(idx1)
+
+        plt.figure(155)
+        plt.clf()
+        plt.scatter(xang-xo, yang-yo, s=1, label='measured')
+        plt.scatter(ref['x'], ref['y'], s=1, label='data')
+        plt.show()
+        #import pdb;pdb.set_trace()
+
+        t = transforms.fourparamNW(ref['x'][idx2N], ref['y'][idx2N] ,  xlis[i][idx1N], ylis[i][idx1N])
+        xnin = xlis[i][idx1N]
+        ynin = ylis[i][idx1N]
+
+        xro = ref['x'][idx2N]
+        yro = ref['y'][idx2N]
+
+        xn, yn = t.evaluate(ref['x'][idx2N], ref['y'][idx2N])
+       
+        _xres = xn - xnin
+        _yres = yn - ynin
+        _xstd = np.std(_xres)
+        _ystd = np.std(_yres)
+        print('residual individual fits', _xstd*6000.0, _ystd*6000.0)
+        #one 3 sigma trim to get rid of huge outliers
+        if sig_clip:
+            #gbool = (_xres  < 3 * _xstd + np.mean(_xres)) * (_xres > -3 * _xstd +np.mean(_xres)) * (_yres < 3 * _ystd + np.mean(_yres)) * (_yres > -3* _ystd + np.mean(_yres))
+            
+            _xa, _xe= stats.mean_std_clip(_xres)
+            _ya, _ye = stats.mean_std_clip(_yres)
+            gbool = (_xres < 3 * _xe + _xa) * (_xres > -3 * _xe + _xa) * (_yres < 3 * _ye + _ya) * (_yres > -3 * _ye + _ya)
+        else:
+            gbool = np.ones(len(_xres), dtype='bool')
+            
+        xln.append(xlis[i][idx1N][gbool])
+        yln.append(ylis[i][idx1N][gbool])
+        xrn.append(ref['x'][idx2N][gbool])
+        yrn.append(ref['y'][idx2N][gbool])
+        frameN.append(np.zeros(len(idx2N[gbool])) + i)
+        refid.append(idx2N[gbool])
+
+    rflat = []
+    for i in range(len(refid)):
+        for k in range(len(refid[i])):
+            rflat.append(refid[i][k])
+    rflat = np.array(rflat)
+    pinid = np.unique(rflat)
+    #only keep pinholes detected in at least nmin frames
+    pingood = []
+    
+    for i in pinid:
+        if np.sum(rflat == i) >= nmin:
+            pingood.append(i)
+    pbool = []
+    for i in range(len(refid)):
+        pbool.append([])
+        for kk in range(len(refid[i])):
+            if refid[i][kk] in pingood:
+                pbool[-1].append(kk)
+    #now trim out pinholes without enough detections
+    if trim_pin:
+        xlnN = []
+        ylnN = []
+        xrnN = []
+        yrnN = []
+        refidN = []
+        frameNN = []
+        for i in range(len(xln)):
+            xlnN.append(xln[i][pbool[i]])
+            ylnN.append(yln[i][pbool[i]])
+            xrnN.append(xrn[i][pbool[i]])
+            yrnN.append(yrn[i][pbool[i]])
+            refidN.append(refid[i][pbool[i]])
+            frameNN.append(frameN[i][pbool[i]])
+        xln = np.array(xlnN)
+        yln = np.array(ylnN)
+        xrn = np.array(xrnN)
+        yrn = np.array(yrnN)
+        refid = np.array(refidN)
+        frameN = np.array(frameNN)
+
+    
+    #derive box that is common for all frames -- only want to sample the same distortion
+    xmin = 0
+    xmax = np.inf
+    ymin = 0
+    ymax = np.inf
+   
+    for i in range(len(xlis)):
+        if np.min(xln[i]) > xmin:
+            xmin = np.min(xln[i])
+        if np.max(xln[i]) < xmax:
+            xmax = np.max(xln[i])
+        if np.min(yln[i]) > ymin:
+            ymin = np.min(yln[i])
+        if np.max(yln[i]) < ymax:
+            ymax = np.max(yln[i])
+    #import pdb;pdb.set_trace()
+    #hardcode cludge
+        #ymax = 5000.0
+
+    #now trim the input coordiants one final time
+    if trim_cam:
+        xlnN = []
+        ylnN = []
+        xrnN = []
+        yrnN = []
+        refidN = []
+        frameNN = []
+        for i in range(len(xln)):
+            print(xmin, xmax, ymin, ymax)
+            cbool = (xln[i] < xmax) * (xln[i] > xmin) * (yln[i] < ymax) * (yln[i] > ymin)
+            print('Number of measured positions left ', np.sum(cbool))
+            xlnN.append(xln[i][cbool])
+            ylnN.append(yln[i][cbool])
+            xrnN.append(xrn[i][cbool])
+            yrnN.append(yrn[i][cbool])
+            refidN.append(refid[i][cbool])
+            frameNN.append(frameN[i][cbool])
+        xln = np.array(xlnN)
+        yln = np.array(ylnN)
+        xrn = np.array(xrnN)
+        yrn = np.array(yrnN)
+        refid = np.array(refidN)
+        frameNN = np.array(frameNN)
+        
+    
+    #now iterate through and fit an individual linear polynomial from the reference to the measured frame, save the measured deltas between on detector and square reference.
+    #new iteration needs to apply the previous distortion solution ....
+
+
+    
+    init_guess = guess_co(offsets, order=order)
+    res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, order, dev_pat))
+    #save the good paramters to an output file
+    _out = Table(data=[res[0]])
+    _out.write('fit.txt', format='ascii.basic')
+    xdatR, ydatR, xrefR, yrefR = com_mod(res[0], xln, yln, xrn, yrn, order=order, evaluate=True)
+
+    xresIF = []
+    yresIF = []
+    xlall = []
+    ylall = []
+    refidall = []
+    frameall = []
+    for i in range(len(xdatR)):
+            
+        xresIF.append(xdatR[i] - xrefR[i])
+        yresIF.append(ydatR[i] - yrefR[i])
+        xlall.append(xln[i])
+        ylall.append(yln[i])
+        refidall.append(refid[i])
+        frameall.append(frameN[i])
+    xresIF = np.array(xresIF)
+    yresIF = np.array(yresIF)
+        #do single round of sigma clipping on residuals
+
+    xlnN = []
+    ylnN = []
+    xrnN = []
+    yrnN = []
+    
+    for i in range(len(xdatR)):
+           
+            #the mean of the residuals is very close to zero
+        _xres =xresIF[i]
+        _yres = yresIF[i]
+        _xstd = np.std(_xres)
+        _ystd =  np.std(_yres)
+        _xa, _xe= stats.mean_std_clip(_xres)
+        _ya, _ye = stats.mean_std_clip(_yres)
+        _gbool = (_xres < 3 * _xe + _xa) * (_xres > -3 * _xe + _xa) * (_yres < 3 * _ye + _ya) * (_yres > -3 * _ye + _ya)
+        print('trimming ', len(_gbool) - np.sum(_gbool) ,' for frame ', i)
+        #gotta write useful text files
+        _oo = Table(data=[xln[i][_gbool], yln[i][_gbool],xrn[i][_gbool], yrn[i][_gbool]], names=['x','y','xr','yr'])
+        _oo.write('mout_'+str(i)+'.txt', format='ascii.basic')
+
+    #print('trimming ', len(tgbool) - np.sum(tgbool))
+        
+        #trim the arguments
+    
+        xlnN.append(xln[i][_gbool])
+        ylnN.append(yln[i][_gbool])
+        xrnN.append(xrn[i][_gbool])
+        yrnN.append(yrn[i][_gbool])
+
+    xln = np.array(xlnN)
+    yln = np.array(ylnN)
+    yrn = np.array(yrnN)
+    xrn = np.array(xrnN)
+    res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, order, dev_pat))
+    xdatR, ydatR, xrefR, yrefR = com_mod(res[0], xln, yln, xrn, yrn, order=order, evaluate=True)
+        
+  
+  
+            
+    xresIF = []
+    yresIF = []
+    xlall = []
+    ylall = []
+    xrall = []
+    yrall = []
+    refidall = []
+    frameall = []
+    for i in range(len(xdatR)):
+        for jj in range(len(xdatR[i])):
+            xresIF.append(xdatR[i][jj] - xrefR[i][jj])
+            yresIF.append(ydatR[i][jj] - yrefR[i][jj])
+            xlall.append(xln[i][jj])
+            ylall.append(yln[i][jj])
+            xrall.append(xrefR[i][jj])
+            yrall.append(yrefR[i][jj])
+            refidall.append(refid[i][jj])
+            frameall.append(frameN[i][jj])
+
+        
+    print('X Residual for sim fit 6 par removed', np.std(xresIF)*6000.0 , ' nm')
+    print('Y Residual for sim fit 6 par removed', np.std(yresIF)*6000.0 , ' nm')
+
+    frameall = np.array(frameall)
+    xresIF = np.array(xresIF)
+    yresIF = np.array(yresIF)
+    ccut = np.unique(frameall)
+    xrall = np.array(xrall)
+    yrall = np.array(yrall)
+   
+
+    colors =['black', 'blue', 'green', 'red', 'purple', 'yellow', 'magenta', 'cyan', 'orange', 'black', 'blue', 'green', 'red', 'purple', 'yellow', 'magenta', 'cyan', 'orange' ]
+    xlall = np.array(xlall)
+    ylall = np.array(ylall)
+    plt.figure(5)
+    plt.clf()
+    plt.figure(10)
+    plt.clf()
+    #import pdb;pdb.set_trace()
+    for i in ccut:
+        _cbool = frameall == i
+        print('residual from frame', i)
+        print(offsets[int(i)])
+    
+        print('X  ',np.std(xresIF[_cbool]*6000.0), ' nm  Y ', np.std(yresIF[_cbool]*6000.0), ' nm')
+        print(' MEDIAN : X  ',np.median(xresIF[_cbool]*6000.0), ' nm  Y ', np.median(yresIF[_cbool]*6000.0), ' nm')
+        print(' MEAN X  ',np.mean(xresIF[_cbool]*6000.0), ' nm  Y ', np.mean(yresIF[_cbool]*6000.0), ' nm')
+        
+        #print('X  ',np.std(xwrong[_cbool]*6000.0), ' nm  Y ', np.std(ywrong[_cbool]*6000.0), ' nm')
+        #analyze_stack.mkquiver(xlall[_cbool], ylall[_cbool], np.array(xreslin)[_cbool], np.array(yreslin)[_cbool], fig_n=5, title_s='Measured Disotortion ', scale=2, scale_size=1, frac_plot=1, save_f='dist_sim_fit.png', incolor=colors[int(i)], clear=False, scy=1150,  xl=500, xh=7150, yh=7000, yl=0)
+        analyze_stack.mkquiver(xlall[_cbool], ylall[_cbool], xresIF[_cbool], yresIF[_cbool], fig_n=10, title_s='Data - Model ', scale=0.5, scale_size=0.05, frac_plot=1, save_f='dist_sim_fit.png', incolor=colors[int(i)], clear=False, scy=1150, scx=400,  xl=1000, xh=6000, yh=6000, yl=500)
+        analyze_stack.mkquiver(xrall[_cbool], yrall[_cbool], xresIF[_cbool], yresIF[_cbool], fig_n=33, title_s='Data - Model ', scale=0.5, scale_size=0.05, frac_plot=1, save_f='dist_sim_fit_ref.png', incolor=colors[int(i)], clear=False, scy=1150, scx=400,  xl=0, xh=7000, yh=5800, yl=0)
+    plt.figure(17)
+    plt.clf()
+    plt.hist(xresIF*6000.0, range=(-600, 600), bins=39, histtype='step', color='green', label='x', lw=5)
+    plt.hist(yresIF*6000.0, range=(-600, 600), bins=39, histtype='step', color='purple', label='y', lw=5)
+    plt.legend(loc='upper left')
+    plt.xlabel('Residual (nm)')
+    plt.ylabel('N')
+    plt.title('Data - Model')
+    plt.savefig('residual_dist_single_fit.png')
+        #now we need to apply a correction to the refernece coordinates...        #refid is list [npos, index of reference star]
+        #make a dictionary lookup for the reference position
+
+    if debug:
+        return res
+    return
