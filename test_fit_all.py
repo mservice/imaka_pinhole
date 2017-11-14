@@ -6,12 +6,13 @@ import scipy
 import numpy as np
 import matplotlib.pyplot as plt 
 
-def test(err=0, mknewcat=True):
+def test(err=0, mknewcat=True, pattern_error=100):
     '''
     Test function for disotriotn fitting routine that includes altering the refernece positions 
     The fit_all.simul_wref() takes a list of xpositoins, ypositions and offsets, compares them to a perfect square reference and then fits for both the distortion and the pattern deviation
 
     err is the size of measurment error in pixels
+    pattern error is the size of the (random) deviations applied ot each pinhole
 
     To simulate:
       -First create a perfect square reference 
@@ -64,9 +65,11 @@ def test(err=0, mknewcat=True):
    
     dx, dy = t.evaluate(ref['x'], ref['y'])
 
-    xpin = ref['x'] + dx
-    ypin = ref['y'] + dy
-    
+#    xpin = ref['x'] + dx
+#    ypin = ref['y'] + dy
+
+    #instead just apply gaussian offsets at the 100 nm level
+    xpin = ref['x'] + 100.0/6000.0 * scipy.stats.norm(loc=0, scale=pattern_error)
     
 
     #now we need to apply translation offsets and create the "average stacked catalogs"
@@ -138,7 +141,7 @@ def test(err=0, mknewcat=True):
     #now we are ready to run the fitting routine
     #we iterate to allow the reference positions to converge 
     fit_all.simul_ave_fit(xln,yln,offsets)
-    res = fit_all.simul_wref(xln, yln, offsets, nmin=1,  order=3, rot_ang=rot_ang, trim_cam=True,trim_pin=False, renorm=False,sig_clip=False, debug=True, dev_pat=True)
+    res = fit_all.simul_wref_simple(xln, yln, offsets, nmin=1,  order=3, rot_ang=rot_ang, trim_cam=True,trim_pin=False, renorm=False,sig_clip=False, debug=True, dev_pat=True)
 
     #if the fitting procedure has updated reference.txt with fixed coordiantes -> these should match xpin and ypin
     refn = Table.read('reference.txt', format='ascii.basic')
