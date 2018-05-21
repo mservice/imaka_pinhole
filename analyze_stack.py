@@ -2,7 +2,7 @@ from . import match_pin
 import numpy as np
 from astropy.table import Table
 import matplotlib.pyplot as plt 
-from flystar.flystar import align , match, transforms
+from flystar_old.flystar_old import align , match, transforms
 from jlu.astrometry import Transform2D as trans
 import matplotlib.animation as manimation
 from scipy.misc import imread
@@ -59,7 +59,7 @@ def mkave(lisf = 'lis.lis', xl=150, xh=5850, yl=800, yh=6032, retmask=False, ret
         
 
         
-def mkref(xin, yin, fittype='four',  trim=True, gspace=170):
+def mkref(xin, yin, fittype='four',  trim=False, gspace=170, ang=0):
     '''
     '''
 
@@ -85,18 +85,33 @@ def mkref(xin, yin, fittype='four',  trim=True, gspace=170):
     
     #gspace = 180
     #gspace = 170
-    xref = np.array(range(300)) * gspace
-    yref = np.array(range(300)) * gspace
-
-    xref = xref - xref[150] + xin[origin_arg]
-    yref = yref - yref[150] + yin[origin_arg]
+    xref = np.array(range(50)) * gspace
+    yref = np.array(range(50)) * gspace
 
     coo = np.meshgrid(xref, yref)
     xr = coo[0].flatten()
     yr = coo[1].flatten()
 
-    idx1, idx2, dr, dm = match.match(xr, yr, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 75)
+    _ang = np.deg2rad(ang)
+    xr = np.cos(_ang) * xr - np.sin(_ang) * yr
+    yr = np.sin(_ang) * xr + np.cos(_ang) * yr
+    
+    
+    
+    xr = xr - np.median(xr) + xin[origin_arg]
+    yr = yr  -np.median(yr) + yin[origin_arg]
 
+    #import pdb;pdb.set_trace()
+    idx1, idx2, dr, dm = match.match(xr, yr, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 150)
+    dx = xr[idx1][0] - xin[idx2][0]
+    dy = yr[idx1][0] - yin[idx2][0]
+    
+    idx1, idx2, dr, dm = match.match(xr-dx, yr-dy, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 75)
+
+    #plt.clf()
+    #plt.scatter(xin, yin)
+    #plt.scatter(xr[idx1]-dx, yr[idx1] - dy)
+    
     assert len(idx1) > 300
     #create linear tranformation of reference to input coordiantes
     #trim refeence coordiantes down
@@ -105,7 +120,7 @@ def mkref(xin, yin, fittype='four',  trim=True, gspace=170):
         xm, ym = t.evaluate(xr[idx1], yr[idx1])
         xres = xm - xin[idx2]
         yres = ym - yin[idx2]
-        print('4 param residual', np.std(xres), np.std(yres))
+        print('4 param residual', np.std(xres) ,  ' pix', np.std(yres), ' pix')
     elif fittype=='linear':
         t = transforms.PolyTransform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],1)
         xm, ym = t.evaluate(xr[idx1], yr[idx1])
@@ -115,9 +130,9 @@ def mkref(xin, yin, fittype='four',  trim=True, gspace=170):
         #import pdb;pdb.set_trace()
     
     elif fittype=='quadratic':
-        t = transforms.LegTransform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],2) 
+        t = transforms.PolyTransform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],2) 
     elif fittype=='cubic':
-        t = transforms.LegTransform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],3) 
+        t = transforms.PolyTransform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],3) 
 
 
     #coo_r = np.sqrt(xref**2 + yref**2)
@@ -130,7 +145,7 @@ def mkref(xin, yin, fittype='four',  trim=True, gspace=170):
     return xin[idx2], yin[idx2], xn[idx1], yn[idx1], xr[idx1], yr[idx1], t
 
         
-def compare2square(xin, yin, fit_ord=1,printcat=False, trim=True, gspace=180):
+def compare2square(xin, yin, fit_ord=1,printcat=False, trim=True, gspace=180, ang=0):
     '''
    takes in coordinats of pinhole images 
     creates a square grid, matches the square grid to the measured positions using a linear tranformation (6 parameter)
@@ -143,7 +158,7 @@ def compare2square(xin, yin, fit_ord=1,printcat=False, trim=True, gspace=180):
     
     #get the point closest to the median of x and y
     ord2arg = {0:'four',1:'linear', 2:'quadratic', 3:'cubic'}
-    xnin, ynin, xr, yr, xs, ys, t = mkref(xin, yin, fittype=ord2arg[fit_ord], trim=trim, gspace=gspace)
+    xnin, ynin, xs, ys, xr, yr, t = mkref(xin, yin, fittype=ord2arg[fit_ord], trim=trim, gspace=gspace, ang=ang)
 
     #now we have the reference coordinates, the next choice is to fit the distortion....
     if printcat:
@@ -687,6 +702,27 @@ def plot_var_from_ar(xshift, yshift, fall , stars_index=None, print_off=True, li
         xn[:,i] = _x
         yn[:,i] = _y
         print(np.std(_x-xave), np.std(_y-yave))
+
+    xave = np.median(xn, axis=1)
+    yave = np.median(yn, axis=1)
+
+    for i in range(xshift.shape[1]):
+        if lin_fit:
+            t = transforms.PolyTransform(xshift[:,i], yshift[:,i], xave, yave, 1)
+        else:
+            t = transforms.four_paramNW(xshift[:,i], yshift[:,i], xave, yave, 1)
+            #make this a fit that only allows for rotation and  translation...
+            #params = affine.fit_rot_trans(np.array([xshift[:,i],yshift[:,i]]).T, np.array([xave, yave]).T)
+            #print(params)
+            #ang = np.deg2rad(params['angle'])
+            #_x =  params['transX'] + np.cos(ang) * xshift[:,i] - np.sin(ang) * yshift[:,i]
+            #_y =  params['transY'] + np.sin(ang) * xshift[:,i] + np.cos(ang) * yshift[:,i]
+
+        _x, _y = t.evaluate(xshift[:,i], yshift[:,i])
+        xn[:,i] = _x
+        yn[:,i] = _y
+        print(np.std(_x-xave), np.std(_y-yave))
+    
         #import pdb;pdb.set_trace()
         if lin_fit:
             for kk in range(len(a)):

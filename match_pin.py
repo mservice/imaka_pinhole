@@ -1,5 +1,5 @@
 #from jlu.astrometry.align import align, jay
-from flystar.flystar import align , match, transforms
+from flystar_old.flystar_old import align , match, transforms
 import numpy as np
 from astropy.table import Table
 from astropy.io import fits
@@ -7,7 +7,7 @@ from scipy.ndimage.interpolation import shift
 import matplotlib.pyplot as plt
 from jlu.util import statsIter as stats
 
-def match_all(lis_f, xkey='x', ykey='y'):
+def match_all(lis_f, xkey='x', ykey='y', retoff=False):
 
     lis_lis = Table.read(lis_f, format='ascii.no_header')['col1']
 
@@ -18,6 +18,8 @@ def match_all(lis_f, xkey='x', ykey='y'):
     _ref = _ref[_ref['corr'] > 0.95]
     xr = _ref[xkey]
     yr = _ref[ykey]
+    dx = []
+    dy = []
     if 'flux' in _ref.keys():
         fr = _ref['flux']
     else:
@@ -32,12 +34,25 @@ def match_all(lis_f, xkey='x', ykey='y'):
             _flux = _tab['flux']
         else:
             _flux = np.zeros(len(_ref))
-        idx1 , idx2 , dm, dr = align.match.match(_tab[xkey],_tab[ykey] ,_flux,  xr, yr, fr, 6)
-        x[idx2,i] = _tab['x'][idx1]
-        y[idx2,i] = _tab['y'][idx1]
+        idx1 , idx2 , dm, dr = align.match.match(_tab[xkey],_tab[ykey] ,_flux,  xr, yr, fr, 100)
+        #import pdb;pdb.set_trace()
+        _dx = np.median(_tab[xkey][idx1] - xr[idx2])
+        _dy = np.median(_tab[ykey][idx1] - yr[idx2])
+        dx.append(_dx)
+        dy.append(_dy)
+        if retoff:
+            x[idx2,i] = _tab['x'][idx1] - _dx
+            y[idx2,i] = _tab['y'][idx1] - _dy
+        else:
+            x[idx2,i] = _tab['x'][idx1] 
+            y[idx2,i] = _tab['y'][idx1] 
+            
         flux[idx2,i] = _tab['flux'][idx1]
 
-    return x, y,flux
+    if retoff:
+        return x, y,flux, dx, dy
+    else:
+        return x, y, flux
 
 def shift_and_ave_coo(xall, yall):
     xshift = np.zeros(xall.shape)

@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 from scipy.optimize import minimize, leastsq
 
-def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, debug_plots=False, order_pattern_error=False, trim_cam=False, fix_trans=False, fit=True, npos=3, rot_ang_l=[0, 90, 180, 270], step_size=250, Niter=5, plot_in=False, order=1, correct_ref=False):
+def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, debug_plots=False, order_pattern_error=False, trim_cam=False, fix_trans=False, fit=True, npos=3, rot_ang_l=[0, 90, 180, 270], step_size=250, Niter=5, plot_in=False, order=1, correct_ref=False, lab_offsets=False, plot_dist=True):
     '''
     Test function for disotriotn fitting routine that includes altering the refernece positions 
     The fit_all.simul_wref() takes a list of xpositoins, ypositions and offsets, compares them to a perfect square reference and then fits for both the distortion and the pattern deviation
@@ -28,6 +28,9 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     Do the tests in terms of the coeffiicients not just the residuals.
     Walk up distoriton solutions from fits order in separate functions
     '''
+    colors = ['black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray']
+            
+
     wd = os.getcwd()
     if not 'tmp' in wd:
         os.mkdir('tmp')
@@ -36,12 +39,12 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
         #make the reference catalog that the fitting code will use
         fit_all.mkrefcat(ang=0)
     #make a starting reference catalog that we will deviate and use to create simulated measurements.
-    fit_all.mkrefcat(outf='ref_test.txt', ang=0)
+    #fit_all.mkrefcat(outf='ref_test.txt', ang=0)
         
-    ref = Table.read('ref_test.txt', format='ascii.basic')
+    ref = Table.read('reference.txt', format='ascii.basic')
 
     #need to declare a pattern deviation
-    t = transforms.PolyTransform(np.ones(10), np.ones(10), np.ones(10), np.ones(10), 3)
+    t = transforms.PolyTransform(np.ones(10), np.ones(10), np.ones(10), np.ones(10), 4)
     #change this to directly call the astropy.models directly 
     #now we can declare the polynomial coefficients
     #translation = 0
@@ -54,7 +57,7 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     #t.px.c2_0 = 2 * 10**-8 
     #t.px.c0_2 = -4 * 10**-8
     #t.px.c1_1 =  5 * 10**-9
-    t.px.c2_0 =  2 * 10**-8
+    t.px.c2_0 = 0# 2 * 10**-8
     t.px.c0_2 = 0 #-4 * 10**-9
     t.px.c1_1 =  0# 5 * 10**-10
 
@@ -62,6 +65,12 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     t.px.c2_1 = 0
     t.px.c1_2 = 0
     t.px.c0_3 = 0
+
+    t.px.c4_0 = 0 #10**-14
+    t.px.c3_1 = 0
+    t.px.c2_2 = 0
+    t.px.c1_3 = 0
+    t.px.c0_4 = 0
 
     t.py.c0_0 =  0
     t.py.c1_0 =  0 # 0.00009
@@ -76,6 +85,13 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     t.py.c1_2 = 0
     t.py.c0_3 = 0
 
+    t.py.c4_0 = 10**-14
+    t.py.c3_1 = 0
+    t.py.c2_2 = 0
+    t.py.c1_3 = 0
+    t.py.c0_4 = 0
+
+    
     #now apply this as a function  of 
     xmin = 1000
     xmax = 6000
@@ -112,18 +128,28 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     
     #these are the offsets from s8, used in paper
     #offsets = [[753, 333],[356,336],[7388-7096,5705-7015],[6203-7096,5707-7015],[6173-7055,300--40.6],[1192-40.6,5758-7055.0], [ 1500, 330], [1500, -1300], [0,0]]
-    #offsets = [[447-40.6, 5894-7055], [770-40.6, 5895-7055], [945-40.6, 5888-7055], [944-40.6, 5644-7055], [697-40.6, 5620-7055], [488-40.6, 5619-7055], [486-40.6, 5376-7055], [745-40.6, 5381-7055], [982-40.6, 5371-7055]]
-    #create a square gird (npos x npos) of obsevations at each rot_ang note these are now input keyword arguements
-    offsets = []
     rot_ang = []
+    
+    if lab_offsets:
+        offsets_s = [[447-40.6, 5894-7055], [770-40.6, 5895-7055], [945-40.6, 5888-7055], [944-40.6, 5644-7055], [697-40.6, 5620-7055], [488-40.6, 5619-7055], [486-40.6, 5376-7055], [745-40.6, 5381-7055], [982-40.6, 5371-7055]]
+    #create a square gird (npos x npos) of obsevations at each rot_ang note these are now input keyword arguements
+    
+    offsets = []
     #rot_ang_l = [0, 90, 180, 270]
     
     #import pdb;pdb.set_trace()
     for _ang in rot_ang_l:
-        for i in range(npos):
-            for j in range(npos):
-                offsets.append([i * step_size, j * step_size])
+        if not lab_offsets:
+            for i in range(npos):
+                for j in range(npos):
+                    offsets.append([i * step_size, j * step_size])
+                    rot_ang.append(_ang)
+        else:
+            for k in range(len(offsets_s)):
+                
+                offsets.append(offsets_s[k])
                 rot_ang.append(_ang)
+            
     #for i in range(npos):
     #    for j in range(npos):
     #        offsets.append([i * 250, j * 250])
@@ -167,42 +193,14 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     #now we create and apply the distortion to the measured coordinates
     #this is a 4th order Legendre Polynomial -- measured for single stack s6/pos_1/
     #t = pickle.load(open('/Users/service/code/python/test_dist_2nd.txt', 'r'))
-    td = transforms.PolyTransform(np.ones(10), np.ones(10), np.ones(10), np.ones(10), 3)
-    #here we use coeffiecients fit to distortion free model per s8, with order=3
-    td.px.c0_0 = 0.0
-    td.px.c1_0 = 0.0
-    td.px.c0_1 = 0.0
-
-    td.px.c2_0 =  7.1*10**-8
-    td.px.c1_1 = 0#5.5*10**-8
-    td.px.c0_2 = 0#5.53*10**-8
-
-    td.px.c3_0 =0# -9*10**-13
-    td.px.c2_1 = 0#8.5*10**-13
-    td.px.c1_2 = 0#-1.4*10**-11
-    td.px.c0_3 = 0#4.7*10**-13
     
-    td.py.c0_0 = 0.0
-    td.py.c1_0 = 0.0
-    td.py.c0_1 = 0.0
-
-    td.py.c2_0 =  0#4.04*10**-8
-    td.py.c1_1 =  0#1.6*10**-7
-    td.py.c0_2 =  1.3*10**-8
-
-    td.py.c3_0 =  0#-1.46 * 10**-13
-    td.py.c2_1 =  0#-1.3 * 10**-11
-    td.py.c1_2 =  0#1.35 * 10**-12
-    td.py.c0_3 =  0#-5.09 * 10**-12
-
+    td = mkdist() #look in def mkdist for details of the current distortion applied
     
-    #this distortion is only defined over a small region of detector pixel space, we keep this data and discard the rest
-    
-    xmax = 10000
-    xmin = -1000
+    xmax = 8000
+    xmin = -1
 
-    ymax = 10000
-    ymin = -1000
+    ymax = 8000
+    ymin = -1
 
     xln = []
     yln = []
@@ -215,13 +213,31 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     plt.clf()
     #import pdb;pdb.set_trace()
     for i in range(len(xlis)):
-        #cbool = (xlis[i] < xmax) * (xlis[i] > xmin) * (ylis[i] < ymax) * (ylis[i] > ymin)
+        cbool = (xlis[i] < xmax) * (xlis[i] > xmin) * (ylis[i] < ymax) * (ylis[i] > ymin)
         cbool = np.ones(len(xlis[i]), dtype='bool')
         dxd, dyd = td.evaluate(xlis[i][cbool], ylis[i][cbool])
+        print('RMS size of distortion', np.std(dxd)*6000, np.std(dyd)*6000.0, np.median(dxd)*6000, np.median(dyd)*6000)
         #import pdb;pdb.set_trace()
         if not distort:
             dxd = np.zeros(np.sum(cbool))
             dyd = np.zeros(np.sum(cbool))
+        if plot_dist:
+            #plt.figure(7000+2*i)
+            #plt.clf()
+            #plt.scatter(xlis[i][cbool], ylis[i][cbool], c=dxd*6000)
+            #plt.colorbar()
+            #plt.title('Y applied distortion (nm)')
+            #plt.figure(7000+2*i+1)
+            #plt.scatter(xlis[i][cbool], ylis[i][cbool], c=dyd*6000)
+            #plt.colorbar()
+            
+            plt.figure(2200)
+            q = plt.quiver(xlis[i][cbool], ylis[i][cbool],dxd, dyd, scale =10, color=colors[i])
+            
+            plt.quiverkey(q, -50, -50, 1, '6000 nm', coordinates='data', color='red')
+                
+
+            
         #dx = dx / np.std(dx) * .5
         #dy = dy / np.std(dy) * .5
         #dxd = np.zeros(len(dyd))
@@ -261,7 +277,7 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
             plt.tight_layout()
             if plot_in:
                 plt.figure(10+i)
-                q = plt.quiver(xln[-1], yln[-1], xln[-1] - _xev, yln[-1] - _yev, scale =5)
+                q = plt.quiver(xln[-1], yln[-1], xln[-1] - _xev, yln[-1] - _yev, scale =10)
             
                 plt.quiverkey(q, -50, -50, 0.1, '600 nm', coordinates='data', color='red')
                 plt.axes().set_aspect('equal')
@@ -288,7 +304,7 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
             plt.figure(100)
             colors = ['black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray']
             
-            q = plt.quiver(xln[-1], yln[-1], xln[-1] - _xev, yln[-1] - _yev, scale =1, color=colors[i], label='cat '+str(i))
+            q = plt.quiver(xln[-1], yln[-1], xln[-1] - _xev, yln[-1] - _yev, scale =20, color=colors[i], label='cat '+str(i))
             
             plt.quiverkey(q, -50, -50, 0.1, '600 nm', coordinates='data', color='red')
             plt.axes().set_aspect('equal')
@@ -307,11 +323,12 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     #we iterate to allow the reference positions to converge 
     #fit_all.simul_wref(xln,yln,offsets)
     if not fit:
+        import pdb;pdb.set_trace()
         init_guess = fit_all.guess_co(offsets_in,rot_ang, order=order)
         res = leastsq(fit_all.com_mod, init_guess, args=(xln, yln, xrnC, yrnC, fix_trans, init_guess, order))
         outres = fit_all.com_mod(res[0], xln, yln, xrnC, yrnC,fix_trans=fix_trans, order=order, evaluate=False, init_guess=init_guess)
-        return outres
-    res = fit_all.simul_wref(xln, yln, offsets_in,  order=order, rot_ang=rot_ang, Niter=Niter, dev_pat=dev_pat, Nmissing=len(xln)+1, sig_clip=False, fourp=False, trim_cam=trim_cam, fix_trans=fix_trans, nmin=1, debug=True, plot_ind=plot_in)
+        return outres, res
+    res = fit_all.simul_wref(xln, yln, offsets_in,  order=order, rot_ang=rot_ang, Niter=Niter, dev_pat=dev_pat, Nmissing=len(xln)+1, sig_clip=False, fourp=False, trim_cam=trim_cam, fix_trans=fix_trans, debug=True, plot_ind=plot_in, trim_pin=False)
    
     
     #import pdb;pdb.set_trace()
@@ -705,3 +722,37 @@ def mkplots_2(refn, xpin, ypin, cb, __dx, __dy):
     #plt.axes().set_aspect('equal')
     print('RMS Pattern deviation mistake X:', np.std(_dx_mod-_dx_input)*6000.0, np.std(_dy_mod-_dy_input)*6000.0)
     plt.tight_layout()
+
+
+def mkdist():
+    
+    td = transforms.PolyTransform(np.ones(10), np.ones(10), np.ones(10), np.ones(10), 3)
+    #here we use coeffiecients fit to distortion free model per s8, with order=3
+    td.px.c0_0 = -1613/6000.0
+    td.px.c1_0 = 0.0
+    td.px.c0_1 = 0.0
+
+    td.px.c2_0 =  7.1*10**-9
+    td.px.c1_1 = 5.5*10**-9
+    td.px.c0_2 = 5.53*10**-9
+
+    td.px.c3_0 = -9*10**-13
+    td.px.c2_1 = 3.5*10**-12
+    td.px.c1_2 = -2.4*10**-13
+    td.px.c0_3 = 0.7*10**-13
+    
+    td.py.c0_0 = 438 / 6000.0
+    td.py.c1_0 = 0.0
+    td.py.c0_1 = 0.0
+
+    td.py.c2_0 =  4.04*10**-9
+    td.py.c1_1 =  1.6*10**-9
+    td.py.c0_2 =  1.3*10**-9
+
+    td.py.c3_0 =  -1.46 * 10**-13
+    td.py.c2_1 =  -1.3 * 10**-12
+    td.py.c1_2 =  1.35 * 10**-12
+    td.py.c0_3 =  -5.09 * 10**-12
+
+    return td
+    

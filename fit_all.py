@@ -785,7 +785,7 @@ def mkrefcat(num_pin=43, gspace=168.0,  ang=-0.33, outf='reference.txt'):
 
 
 
-def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=4, dev_pat=True, renorm=True, rot_ang=None, sig_clip=True, debug=False, ind_fits=False, Niter=5, fourp=False, trim_dev_ref_only=False, Nmissing=2, fix_trans=False, plot_ind=True):
+def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_pat=True, renorm=True, rot_ang=None, sig_clip=True, debug=False, ind_fits=False, Niter=5, fourp=False, trim_dev_ref_only=False, Nmissing=2, fix_trans=False, plot_ind=True):
     '''
     xlis -- list of x coordinates [nframes, npinholes]
     offsets --- list of offsets to translate between each frame
@@ -806,7 +806,52 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=
     if rot_ang is None:
         rot_ang = np.zeros(len(xlis))
 
-    #read in the 
+    #derive box that is common for all frames -- only want to sample the same distortion -- This is currently hardcoded
+    #what if I just leave it all and trim in common pinhole space...
+    xmin = 0
+    xmax = np.inf
+    ymin = 0
+    ymax = np.inf
+    for i in range(len(xlis)):
+        #cludege to make space match for individual fits
+        if np.min(xlis[i]) > xmin:
+            xmin = np.min(xlis[i])
+            xmin = 965.148
+        if np.max(xlis[i]) < xmax:
+            xmax = np.max(xlis[i])
+            xmax = 7263.57
+        if np.min(ylis[i]) > ymin:
+            ymin = np.min(ylis[i])
+            ymin = 490.87
+        if np.max(ylis[i]) < ymax:
+            ymax = np.max(ylis[i])
+            ymax = 5218.0615
+    #import pdb;pdb.set_trace()
+    #hardcode cludge
+        #ymax = 5000.0
+   
+    #now trim the input coordinats to only keep the region on the detector in every catalog
+    #assumes that the mask was only rotated in 90 degree increments
+    if trim_cam:
+        xlnN = []
+        ylnN = []
+        xrnN = []
+        yrnN = []
+        refidN = []
+        frameNN = []
+        for i in range(len(xlis)):
+            print(xmin, xmax, ymin, ymax)
+            cbool = (xlis[i] < xmax) * (xlis[i] > xmin) * (ylis[i] < ymax) * (ylis[i] > ymin)
+            print('Number of measured positions left ', np.sum(cbool))
+            xlnN.append(xlis[i][cbool])
+            ylnN.append(ylis[i][cbool])
+            
+        xlis = xlnN
+        ylis = ylnN
+        
+    #now iterate through and fit an individual linear polynomial from the reference to the measured frame, save the measured deltas between on detector and square reference.
+    #new iteration needs to apply the previous distortion solution ....
+
    
     ref = Table.read('reference.txt', format='ascii.basic')
     
@@ -907,10 +952,11 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=
 
     
     #(optionally) trim out pinholes without enough detections
+    
     pingood = []
     
     for i in pinid:
-        if np.sum(rflat == i) >= nmin:
+        if np.sum(rflat == i) >= len(xln):
             pingood.append(i)
     pbool = []
     for i in range(len(refid)):
@@ -941,59 +987,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=
         frameN = np.array(frameNN)
 
     
-    #derive box that is common for all frames -- only want to sample the same distortion
-    xmin = 0
-    xmax = np.inf
-    ymin = 0
-    ymax = np.inf
    
-    for i in range(len(xlis)):
-        #cludege to make space match for individual fits
-        if np.min(xln[i]) > xmin:
-            xmin = np.min(xln[i])
-            xmin = 965.148
-        if np.max(xln[i]) < xmax:
-            xmax = np.max(xln[i])
-            xmax = 7263.57
-        if np.min(yln[i]) > ymin:
-            ymin = np.min(yln[i])
-            ymin = 490.87
-        if np.max(yln[i]) < ymax:
-            ymax = np.max(yln[i])
-            ymax = 5218.0615
-    #import pdb;pdb.set_trace()
-    #hardcode cludge
-        #ymax = 5000.0
-   
-    #now trim the input coordinats to only keep the region on the detector in every catalog
-    #assumes that the mask was only rotated in 90 degree increments
-    if trim_cam:
-        xlnN = []
-        ylnN = []
-        xrnN = []
-        yrnN = []
-        refidN = []
-        frameNN = []
-        for i in range(len(xln)):
-            print(xmin, xmax, ymin, ymax)
-            cbool = (xln[i] < xmax) * (xln[i] > xmin) * (yln[i] < ymax) * (yln[i] > ymin)
-            print('Number of measured positions left ', np.sum(cbool))
-            xlnN.append(xln[i][cbool])
-            ylnN.append(yln[i][cbool])
-            xrnN.append(xrn[i][cbool])
-            yrnN.append(yrn[i][cbool])
-            refidN.append(refid[i][cbool])
-            frameNN.append(frameN[i][cbool])
-        xln = np.array(xlnN)
-        yln = np.array(ylnN)
-        xrn = np.array(xrnN)
-        yrn = np.array(yrnN)
-        refid = np.array(refidN)
-        frameNN = np.array(frameNN)
-        
-    #now iterate through and fit an individual linear polynomial from the reference to the measured frame, save the measured deltas between on detector and square reference.
-    #new iteration needs to apply the previous distortion solution ....
-
 
     if not fourp:
         init_guess = guess_co(offsets,rot_ang, order=order)
@@ -1037,7 +1031,11 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=
         _ystd =  np.std(_yres)
         _xa, _xe= stats.mean_std_clip(_xres)
         _ya, _ye = stats.mean_std_clip(_yres)
-        _gbool = (_xres < 5 * _xe + _xa) * (_xres > -5 * _xe + _xa) * (_yres < 5 * _ye + _ya) * (_yres > -5 * _ye + _ya)
+
+        if sig_clip:
+            _gbool = (_xres < 5 * _xe + _xa) * (_xres > -5 * _xe + _xa) * (_yres < 5 * _ye + _ya) * (_yres > -5 * _ye + _ya)
+        else:
+            _gbool = np.ones(len(_xres), dtype='bool')
         print('trimming ', len(_gbool) - np.sum(_gbool) ,' for frame ', i)
         
 
@@ -1326,7 +1324,8 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, nmin=
         #print('X  ',np.std(xwrong[_cbool]*6000.0), ' nm  Y ', np.std(ywrong[_cbool]*6000.0), ' nm')
         #analyze_stack.mkquiverxlall[_cbool], ylall[_cbool], np.array(xreslin)[_cbool], np.array(yreslin)[_cbool], fig_n=5, title_s='Measured Disotortion ', scale=2, scale_size=1, frac_plot=1, save_f='dist_sim_fit.png', incolor=colors[int(i)], clear=False, scy=1150,  xl=500, xh=7150, yh=7000, yl=0)
         _scale = np.std(xresIF[ggx]) *6000 / 100
-        
+        analyze_stack.mkquiver(xlall[_cbool], ylall[_cbool], xresIF[_cbool], yresIF[_cbool], fig_n=123+str(i), title_s='Data - Model (camera coordiantes) ', scale=_scale, scale_size=_scale/10.0, frac_plot=1, save_f='res_ind'+str(i)+'.png', incolor=colors[int(i)], clear=False, scy=1150, scx=-1000,  xl=-500, xh=8000, yh=6000, yl=-500)
+         
         analyze_stack.mkquiver(xlall[_cbool], ylall[_cbool], xresIF[_cbool], yresIF[_cbool], fig_n=10, title_s='Data - Model (camera coordiantes) ', scale=_scale, scale_size=_scale/10.0, frac_plot=1, save_f='dist_sim_fit.png', incolor=colors[int(i)], clear=False, scy=1150, scx=-1000,  xl=-500, xh=8000, yh=6000, yl=-500)
         analyze_stack.mkquiver(xrall[_cbool], yrall[_cbool], xmeas_ref_res[_cbool], ymeas_ref_res[_cbool], fig_n=33, title_s='Data - Model (pinhole coordinates) ', scale=_scale, scale_size=_scale/10.0, frac_plot=1, save_f='dist_sim_fit_ref.png', incolor=colors[int(i)], clear=False, scy=1150, scx=-1000,  xl=-500, xh=9000, yh=8000, yl=-500)
     plt.figure(17)
@@ -1539,11 +1538,7 @@ def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2
         for kk in range(xin.shape[0]):
             xn.append(xin[kk])
             yn.append(yin[kk])
-    #now need to add in the pattern refernece terms, these are the last 6 terms in co array
-    xrn = []
-    yrn = []
-    #import pdb;pdb.set_trace()
-   
+  
     xrn = xrL
     yrn = yrL
     
@@ -1564,8 +1559,8 @@ def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2
     
     for jj in range(xin.shape[0]):
         for kk in range(len(xin[jj])):
-            tot.append(xn[jj][kk] - xrL[jj][kk])
-            tot.append(yn[jj][kk] - yrL[jj][kk])
+            tot.append(xn[jj][kk] - xrn[jj][kk])
+            tot.append(yn[jj][kk] - yrn[jj][kk])
     tot = np.abs(np.array(tot))
  
     return tot
@@ -1708,7 +1703,7 @@ def plot_lin_dist(ff='fit.txt', mlis='mout.lis', order=3):
        
 
 
-        analyze_stack.mkquiver(_m['x'], _m['y'], dx, dy, fig_n=12, title_s='Linear Residual', scale=.50, scale_size=.01, frac_plot=1, save_f='measured_dist.png', incolor=colors[int(i)], clear=False, scy=1150,scx=0,  xl=500, xh=6500, yh=5300, yl=300, xlab =r'$x_{m}$ (pixels)', ylab=r'$y_{m}$ (pixels)')
+        analyze_stack.mkquiver(_m['x'], _m['y'], dx, dy, fig_n=12, title_s='Linear Residual', scale=.50, scale_size=.01, frac_plot=1, save_f='measured_dist_lin.png', incolor=colors[int(i)], clear=False, scy=1150,scx=0,  xl=500, xh=6500, yh=5300, yl=300, xlab =r'$x_{m}$ (pixels)', ylab=r'$y_{m}$ (pixels)')
 
         scale_fac = np.std( xdatR[i]-xrefR[i]) * 6000 / 100
         analyze_stack.mkquiver(_m['x'], _m['y'], xdatR[i]-xrefR[i], ydatR[i]-yrefR[i], fig_n=13, title_s='Total Residual', scale=scale_fac*.50, scale_size=scale_fac*.01, frac_plot=1, save_f='total_model_resid.png', incolor=colors[int(i)], clear=False, scy=1150,scx=0,  xl=500, xh=6500, yh=5300, yl=300, xlab =r'$x_{m}$ (pixels)', ylab=r'$y_{m}$ (pixels)')
