@@ -5,7 +5,7 @@ from astropy.table import Table
 from astropy.io import fits
 from scipy.ndimage.interpolation import shift
 import matplotlib.pyplot as plt
-from jlu.util import statsIter as stats
+#from jlu.util import statsIter as stats
 
 def match_all(lis_f, xkey='x', ykey='y', retoff=False):
 
@@ -62,8 +62,8 @@ def shift_and_ave_coo(xall, yall):
 
     for i in range(xall.shape[1]):
         _mbool = xall[:,i] != 0.0
-        _dx, _dxerr = stats.mean_std_clip(xall[:,0][_mbool]-xall[:,i][_mbool])
-        _dy, _dyerr = stats.mean_std_clip(yall[:,0][_mbool]-yall[:,i][_mbool])
+        #_dx, _dxerr = stats.mean_std_clip(xall[:,0][_mbool]-xall[:,i][_mbool])
+        #_dy, _dyerr = stats.mean_std_clip(yall[:,0][_mbool]-yall[:,i][_mbool])
         #_dy = np.mean(yall[:,0][_mbool]-yall[:,i][_mbool])
         xshift[:,i] = xall[:,i] + _dx
         yshift[:,i] = yall[:,i] + _dy
