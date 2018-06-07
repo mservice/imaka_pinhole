@@ -358,10 +358,12 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     #to do this comparrison you need to eliminate the linear terms in the input distortion
     plt.figure(2005)
     
-    _tl = transforms.PolyTransform(_dist['x']+_dxin, _dist['y']+_dyin, _dist['dx']+_dist['x'], _dist['dy']+_dist['y'], 1)
-    _xmd, _ymd = _tl.evaluate(_dist['x']+_dxin, _dist['y']+_dyin)
-    diffx = _dist['dx'] + _xmd - _dist['x']
-    diffy = _dist['dy'] + _ymd - _dist['y']
+    #_tl = transforms.PolyTransform(_dist['x']+_dxin, _dist['y']+_dyin, _dist['dx']+_dist['x'], _dist['dy']+_dist['y'], 1)
+    _tl = transforms.PolyTransform(_dist['x'], _dist['y'],_dxin, _dyin,  1)
+    _xmd, _ymd = _tl.evaluate(_dist['x'], _dist['y'])
+    diffx = _dist['dx'] - _xmd #- _dist['x']
+    diffy = _dist['dy'] - _ymd #- _dist['y']
+    import pdb;pdb.set_trace()
     #diffx = _dist['dx']+_dxin
     #diffx = diffx - np.mean(diffx)
     #diffy = _dist['dy']+_dyin
