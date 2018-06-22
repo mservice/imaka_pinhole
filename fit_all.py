@@ -990,7 +990,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
    
 
     if not fourp:
-        init_guess = guess_co(offsets,rot_ang, order=order)
+        init_guess = guess_co(xln, yln, xrn, yrn, order=order) #offsets,rot_ang, order=order)
         res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, fix_trans, init_guess, order))
         xdatR, ydatR, xrefR, yrefR = com_mod(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess)
     else:
@@ -1054,7 +1054,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
     xrn = np.array(xrnN)
     #res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, order))
     if not fourp:
-        init_guess = guess_co(offsets,rot_ang, order=order)
+        init_guess = guess_co(xln, yln, xrn, yrn, order=order)#offsets,rot_ang, order=order)
         res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, fix_trans, init_guess, order))
         xdatR, ydatR, xrefR, yrefR = com_mod(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess)
     else:
@@ -1124,7 +1124,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
            #add in measurments to the appropriate array 
            xallR[idx2,i] = xrn[i][idx1] 
            yallR[idx2,i] = yrn[i][idx1]
-           #note, these are the linearly corrected positions in the reference pinhole frame -- they shoudl only be computed over a common set of pinholes --
+           #note, these are the linearly corrected positions in the reference pinhole frame -- they should only be computed over a common set of pinholes --
            xallM[idx2,i] = _xrm[idx1] 
            yallM[idx2,i] = _yrm[idx1] 
 
@@ -1137,18 +1137,12 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
         #need mask to prevent reference positions with only 1 measurment from being iteratively updated
         #_n = xallR.shape[1]
         #masked such that the pinhole must be in ALL but Nmissing data sets.
-        #could (should?) be flipped to a reuirement of X measurments
+        #could (should?) be flipped to a requirement of X measurments
         goodmask = np.sum(_mask,axis=1) < Nmissing + 1
         xave = np.mean(xallR, axis=1)
         yave = np.mean(yallR, axis=1)
         xave_err = np.std(xallM, axis=1)
         yave_err = np.std(yallM, axis=1)
-
-        #first we need to renormalize the difference measurments such that they have the same mean offset over the common set of pinholes in all measurments.
-        #allmask = np.sum(_mask,axis=1) <  1
-        #__off = []
-        #_mean_dx = np.mean(xallM[allmask,:]-xallR[allmask,:], axis=0)
-        #_mean_dy = np.mean(yallM[allmask,:]-yallR[allmask,:], axis=0)
 
         #this averages the measurements of each pinhole, but with the translation subtracted for each set of pinbholes common to all frames
         #No longer neccessarey because the linear transformation (tl) is only computed over a common set of stars.
@@ -1455,7 +1449,7 @@ def com_mod4p(co, xin, yin, xr, yr,fix_trans=False, init_guess=None ,order = 2,e
  
     return tot
 
-def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2,evaluate=False, xnormfac=4000, ynormfac=4000):
+def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2,evaluate=False, xnormfac=4000.0, ynormfac=4000.0):
     '''
     add in deviations a a function of xr , yr up to second order ...
     drx =  c1 * x**2 + c2 * x*y + c3 * y**2
@@ -1487,16 +1481,16 @@ def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2
     yrL = []
     
     for i in range(xin.shape[0]):
-
+        
         if not fix_trans:
-            tx = (co[6*i])#/4000.0
-            ty = (co[6*i+3])#/3000.0
+            tx = (co[6*i])#/xnormfac
+            ty = (co[6*i+3])#/ynormfac
         else:
-            tx = (init_guess[6*i])#/4000.0
-            ty = (init_guess[6*i+3])#/3000.0
+            tx = (init_guess[6*i])#/xnormfac
+            ty = (init_guess[6*i+3])#/ynormfac
         
 
-        #apply the linear scale/rotation coefficients to the measured data points and normalize them
+        #apply the linear scale/rotation coefficients to the measured data points
         #xlin.append(co[6*i+1] * xin[i] + co[6*i+2] * yin[i] + tx)
         #ylin.append(co[6*i+4] * xin[i] + co[6*i+5] * yin[i] + ty)
 
@@ -1561,10 +1555,10 @@ def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2
         for kk in range(len(xin[jj])):
             tot.append(xn[jj][kk] - xrn[jj][kk])
             tot.append(yn[jj][kk] - yrn[jj][kk])
-    tot = np.abs(np.array(tot))
+    #tot = np.abs(np.array(tot))
  
     return tot
-def guess_co(offsets,rot_ang, order=2):
+def guess_co( xin, yin, xr, yr, order=2):
     '''
     Note, rot_ang is the rotation to go from refernce coordiantes to Measured Coorddinates
     The model applies a linear transformation to go from Measured coordinates to reference coordinates, so the angle needs to be reversed 
@@ -1573,16 +1567,23 @@ def guess_co(offsets,rot_ang, order=2):
     co = []
     #expar = {2:6+4, 3:14+4, 4:24+4}
     expar = {1:0, 2:6, 3:14, 4:24, 1:0}
-    for i in range(len(offsets)):
-        _ang = 1.0*np.deg2rad(rot_ang[i])
-        co.append(0)#-1.0*(offsets[i][0]))#-4000.0)/4000.0)
-        co.append(np.cos(_ang))
-        co.append(-1.0*np.sin(_ang))
-        co.append(0)#-1.0*(offsets[i][1]))#-3000.0)/3000.0)
-        co.append(np.sin(_ang))
-        co.append(np.cos(_ang))
-        
-        
+    
+    #for i in range(len(offsets)):
+    #    _ang = 1.0*np.deg2rad(rot_ang[i])
+    #    co.append(0)#-1.0*(offsets[i][0]))#-4000.0)/4000.0)
+    #    co.append(np.cos(_ang))
+    #    co.append(-1.0*np.sin(_ang))
+    #    co.append(0)#-1.0*(offsets[i][1]))#-3000.0)/3000.0)
+    #    co.append(np.sin(_ang))
+    #    co.append(np.cos(_ang))
+    for i in range(len(xin)):
+        t = transforms.PolyTransform(xr[i]-4000, yr[i]-3000, xin[i]-4000, yin[i]-3000, 1)
+        co.append(t.px.c0_0.value/4000.0)
+        co.append(t.px.c1_0.value)
+        co.append(t.px.c0_1.value)
+        co.append(t.py.c0_0.value/4000.0)
+        co.append(t.py.c1_0.value)
+        co.append(t.py.c0_1.value)
     #add in high order distortion terms
     for i in range(expar[order]):
         co.append(0.0)

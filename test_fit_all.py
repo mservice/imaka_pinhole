@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 from scipy.optimize import minimize, leastsq
 
-def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, debug_plots=False, order_pattern_error=False, trim_cam=False, fix_trans=False, fit=True, npos=3, rot_ang_l=[0, 90, 180, 270], step_size=250, Niter=5, plot_in=False, order=1, correct_ref=False, lab_offsets=False, plot_dist=True):
+def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, debug_plots=False, order_pattern_error=False, trim_cam=False, fix_trans=False, fit=True, npos=3, rot_ang_l=[0, 90, 180, 270], step_size=250, Niter=5, plot_in=False, order=4, correct_ref=False, lab_offsets=False, plot_dist=True):
     '''
     Test function for disotriotn fitting routine that includes altering the refernece positions 
     The fit_all.simul_wref() takes a list of xpositoins, ypositions and offsets, compares them to a perfect square reference and then fits for both the distortion and the pattern deviation
@@ -54,9 +54,6 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     #linear cross term
     t.px.c0_1 = 0 #0.00004
     #quadratic terms
-    #t.px.c2_0 = 2 * 10**-8 
-    #t.px.c0_2 = -4 * 10**-8
-    #t.px.c1_1 =  5 * 10**-9
     t.px.c2_0 = 0# 2 * 10**-8
     t.px.c0_2 = 0 #-4 * 10**-9
     t.px.c1_1 =  0# 5 * 10**-10
@@ -92,7 +89,7 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     t.py.c0_4 = 0
 
     
-    #now apply this as a function  of 
+    #now apply this as a function  of reference position
     xmin = 1000
     xmax = 6000
     ymin = 1000
@@ -125,18 +122,15 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
         mkplots_1(ref, dx, dy, _xerr, _yerr, xpin, ypin)
  
     #now we need to apply translation offsets and create the "average stacked catalogs"
-    
     #these are the offsets from s8, used in paper
     #offsets = [[753, 333],[356,336],[7388-7096,5705-7015],[6203-7096,5707-7015],[6173-7055,300--40.6],[1192-40.6,5758-7055.0], [ 1500, 330], [1500, -1300], [0,0]]
     rot_ang = []
-    
     if lab_offsets:
         offsets_s = [[447-40.6, 5894-7055], [770-40.6, 5895-7055], [945-40.6, 5888-7055], [944-40.6, 5644-7055], [697-40.6, 5620-7055], [488-40.6, 5619-7055], [486-40.6, 5376-7055], [745-40.6, 5381-7055], [982-40.6, 5371-7055]]
     #create a square gird (npos x npos) of obsevations at each rot_ang note these are now input keyword arguements
     
     offsets = []
     #rot_ang_l = [0, 90, 180, 270]
-    
     #import pdb;pdb.set_trace()
     for _ang in rot_ang_l:
         if not lab_offsets:
@@ -149,19 +143,11 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
                 
                 offsets.append(offsets_s[k])
                 rot_ang.append(_ang)
-            
-    #for i in range(npos):
-    #    for j in range(npos):
-    #        offsets.append([i * 250, j * 250])
-    #rot_ang.append(90)
-   
-    #add in data at 90 degree rotation
     xlis = []
     ylis = []
 
     plt.figure(2)
     plt.clf()
-    #add offsets the "measured" positions
     offsets_in = []
     _norm = scipy.stats.norm(loc=0 , scale=err)
     for _iii, _off in enumerate(offsets):
@@ -170,9 +156,8 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
         _ytmp = (ypin-3000)*np.cos(_ang) + (xpin-4000)*np.sin(_ang)
         #now we need to move the measured coordiantes such that the lowest value points (lower left) is at offsets[i][0,1]
         #import pdb;pdb.set_trace()    
-        _dx = _off[0] - np.median(_xtmp) + 4000
-        _dy = _off[1] - np.median(_ytmp) + 3000
-        #want to know where the origin landed, to give the correct offsets into the fitter
+        _dx = _off[0]  + 4000
+        _dy = _off[1]  + 3000
         
         xlis.append(_xtmp + _dx)
         ylis.append(_ytmp + _dy)
@@ -190,10 +175,7 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
             plt.title('Measured Position with no distortion')
             plt.legend(loc='upper right')
     
-    #now we create and apply the distortion to the measured coordinates
-    #this is a 4th order Legendre Polynomial -- measured for single stack s6/pos_1/
-    #t = pickle.load(open('/Users/service/code/python/test_dist_2nd.txt', 'r'))
-    
+    #this is a 4th order Legendre Polynomial -- measured for single stack s6/pos_1/    
     td = mkdist() #look in def mkdist for details of the current distortion applied
     
     xmax = 8000
@@ -215,116 +197,43 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     for i in range(len(xlis)):
         cbool = (xlis[i] < xmax) * (xlis[i] > xmin) * (ylis[i] < ymax) * (ylis[i] > ymin)
         cbool = np.ones(len(xlis[i]), dtype='bool')
-        dxd, dyd = td.evaluate(xlis[i][cbool], ylis[i][cbool])
+        dxd, dyd = td.evaluate(xlis[i][cbool]-4000.0, ylis[i][cbool]-3000.0)
         print('RMS size of distortion', np.std(dxd)*6000, np.std(dyd)*6000.0, np.median(dxd)*6000, np.median(dyd)*6000)
         #import pdb;pdb.set_trace()
         if not distort:
             dxd = np.zeros(np.sum(cbool))
             dyd = np.zeros(np.sum(cbool))
         if plot_dist:
-            #plt.figure(7000+2*i)
-            #plt.clf()
-            #plt.scatter(xlis[i][cbool], ylis[i][cbool], c=dxd*6000)
-            #plt.colorbar()
-            #plt.title('Y applied distortion (nm)')
-            #plt.figure(7000+2*i+1)
-            #plt.scatter(xlis[i][cbool], ylis[i][cbool], c=dyd*6000)
-            #plt.colorbar()
             
             plt.figure(2200)
             q = plt.quiver(xlis[i][cbool], ylis[i][cbool],dxd, dyd, scale =10, color=colors[i])
             
             plt.quiverkey(q, -50, -50, 1, '6000 nm', coordinates='data', color='red')
                 
-
-            
-        #dx = dx / np.std(dx) * .5
-        #dy = dy / np.std(dy) * .5
-        #dxd = np.zeros(len(dyd))
-        #dyd = np.zeros(len(dxd))
+        #add the distortion term to the measurments
         xln.append(xlis[i][cbool]+dxd+ _norm.rvs(np.sum(cbool)))
         yln.append(ylis[i][cbool]+dyd+ _norm.rvs(np.sum(cbool)))
+        #create the array of reference positions that is matched to the measurements
         xrnC.append(xpin[cbool])
         yrnC.append(ypin[cbool])
 
+        #create transformstion for the debugging plots
         tl = transforms.PolyTransform(ref['x'], ref['y'], xln[-1], yln[-1], 1)
         __xn, __yn = tl.evaluate(ref['x'], ref['y'])
         xrn.append(__xn)
         yrn.append(__yn)
+        
         if debug_plots:
             #need
-            t4p = transforms.four_paramNW(ref['x'][cbool], ref['y'][cbool], xln[-1], yln[-1])
-            _xev, _yev = t4p.evaluate(ref['x'][cbool], ref['y'][cbool])
-            
-            plt.figure(1234)
-            plt.subplot(2, 1, 1)
-            #import pdb;pdb.set_trace()
-            plt.scatter(xln[-1], ( xln[-1] - _xev)*6000.0, label='cat '+str(i))
-            plt.title("Total Deviation from Square (4p)")
-            plt.xlabel('X camera (pix)')
-            plt.ylabel("X Difference (nm)")
-            plt.vlines([7263, 965], -50, 600, color='red')
-            plt.legend(loc='lower right')
-
-            plt.subplot(2, 1, 2)
-            plt.scatter(yln[-1], ( yln[-1] - _yev)*6000.0, label='cat '+str(i))
-            plt.title("Total Deviation from Square (4p)")
-            plt.xlabel('Y camera (pix)')
-            plt.ylabel("Y Difference (nm)")
-            plt.vlines([490, 5218], -600, 50, color='red')
-            plt.legend(loc='lower right')
-
-            plt.tight_layout()
-            if plot_in:
-                plt.figure(10+i)
-                q = plt.quiver(xln[-1], yln[-1], xln[-1] - _xev, yln[-1] - _yev, scale =10)
-            
-                plt.quiverkey(q, -50, -50, 0.1, '600 nm', coordinates='data', color='red')
-                plt.axes().set_aspect('equal')
-                plt.xlabel("X camera (pix)")
-                plt.ylabel("Y camera (pix)")
-                plt.title('Total Deviation from Square Catalog '+str(i))
-
-                plt.figure(130+i)
-                plt.subplot(2, 1,  1)
-                plt.scatter(xln[-1], yln[-1], c=(xln[-1] - _xev)*6000)
-                plt.title('Total Deviation from Square Catalog '+str(i))
-                plt.xlabel('X camera (pix)')
-                plt.ylabel('Y camera (pix)')
-                plt.colorbar()
-
-                plt.subplot(2,1,  2)
-                plt.scatter(xln[-1], yln[-1], c=(yln[-1] - _yev)*6000.0)
-                plt.title('Total Deviation from Square Catalog '+str(i))
-                plt.xlabel('X camera (pix)')
-                plt.ylabel('Y camera (pix)')
-                plt.colorbar()
-            
-
-            plt.figure(100)
-            colors = ['black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray']
-            
-            q = plt.quiver(xln[-1], yln[-1], xln[-1] - _xev, yln[-1] - _yev, scale =20, color=colors[i], label='cat '+str(i))
-            
-            plt.quiverkey(q, -50, -50, 0.1, '600 nm', coordinates='data', color='red')
-            plt.axes().set_aspect('equal')
-            plt.xlabel("X camera (pix)")
-            plt.ylabel("Y camera (pix)")
-            plt.title('Total Deviation from Square')
-            plt.legend(loc='upper left')
-
-            
-            #fig, axes = plt.subplots(1, 2, 1)
-            
-            #plt.subplot(1, 2, 1)
-
+            mk_debug_plots(ref, xln, yln) 
+        
     #import pdb;pdb.set_trace()
     #now we are ready to run the fitting routine
     #we iterate to allow the reference positions to converge 
     #fit_all.simul_wref(xln,yln,offsets)
     if not fit:
         import pdb;pdb.set_trace()
-        init_guess = fit_all.guess_co(offsets_in,rot_ang, order=order)
+        init_guess = fit_all.guess_co(xln, yln, xrnC, yrnC, order=order)
         res = leastsq(fit_all.com_mod, init_guess, args=(xln, yln, xrnC, yrnC, fix_trans, init_guess, order))
         outres = fit_all.com_mod(res[0], xln, yln, xrnC, yrnC,fix_trans=fix_trans, order=order, evaluate=False, init_guess=init_guess)
         return outres, res
@@ -351,7 +260,7 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     _dist = Table.read('dist_test.txt', format='ascii.basic')
 
     if distort:
-        _dxin, _dyin = td.evaluate(_dist['x'], _dist['y'])
+        _dxin, _dyin = td.evaluate(_dist['x']-4000, _dist['y']-3000)
     else:
         _dxin = np.zeros(len(_dist['x']))
         _dyin = np.zeros(len(_dist['y']))
@@ -361,14 +270,15 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     #_tl = transforms.PolyTransform(_dist['x']+_dxin, _dist['y']+_dyin, _dist['dx']+_dist['x'], _dist['dy']+_dist['y'], 1)
     _tl = transforms.PolyTransform(_dist['x'], _dist['y'],_dxin, _dyin,  1)
     _xmd, _ymd = _tl.evaluate(_dist['x'], _dist['y'])
-    diffx = _dist['dx'] - _xmd #- _dist['x']
-    diffy = _dist['dy'] - _ymd #- _dist['y']
+    diffx = _dist['dx'] + _dxin
+    diffy = _dist['dy'] + _dyin
     import pdb;pdb.set_trace()
     #diffx = _dist['dx']+_dxin
     #diffx = diffx - np.mean(diffx)
     #diffy = _dist['dy']+_dyin
     #diffy = diffy - np.mean(diffy)
-    
+    plt.figure(2005)
+
     plt.scatter(_dist['x'], _dist['y'], c=diffx*6000.0)
     plt.title('X Camera Distortion Meaurement Mistake (model - input)')
     plt.xlabel("X reference (pix)")
@@ -439,6 +349,7 @@ fix scale
     xrefn = xref
     count = 0
     while contin:
+        #import pdb;pdb.set_trace()
         res = leastsq(com_mod, init_guess, args=(xmeas, xrefn, fix_scale, fix_trans, init_guess))
         resid = com_mod(res[0],xmeas, xrefn,fix_scale, fix_trans,init_guess, evaluate=True)
         if dev_pat == False  or count == Maxcount :
@@ -488,49 +399,54 @@ fix scale
 
     for i in range(len(xref)):
         plt.figure(1)
-        plt.subplot(5, 1, 3)
+        plt.subplot(3, 1, 2)
         plt.scatter(xmeas[i], resid[i]*6000.0, s=2, label=str(i))
         #plt.figure(2)
-        plt.subplot(5, 1, 1)
+        plt.subplot(3, 1, 1)
         plt.scatter(xmeas[i], (xmeas[i]-xref[i]-offsets[i])*6000.0, s=2, label=str(i))
-        plt.subplot(5, 1, 2)
-        plt.scatter(xmeas[i], -1.0*(xrefn[i] - xmeas[i] * res[0][2*i] - res[0][2*i+1])*6000.0, s=2, label=str(i))
-        plt.subplot(5, 1, 4)
-        plt.scatter(xref[i], resid[i]*6000.0, label=str(i))
-        plt.subplot(5, 1, 5)
-        plt.scatter(xmeas[i],( xmeas[i]**2*res[0][-1])*6000.0)
+        #plt.subplot(5, 1, 2)
+        #plt.scatter(xmeas[i], -1.0*(xrefn[i] - xmeas[i] * res[0][2*i] - res[0][2*i+1])*6000.0, s=2, label=str(i))
+        #plt.subplot(5, 1, 4)
+        #plt.scatter(xref[i], resid[i]*6000.0, label=str(i))
+        plt.subplot(3, 1, 3)
+        plt.scatter(xmeas[i],( -1.0*(xmeas[i]-np.median(xpin))**2*res[0][-1])*6000.0)
         
 
     _out = Table()
     _out['co'] = res[0]
     _out.write('1D_co.txt', format='ascii.basic')
     #plt.figure(1)
-    plt.subplot(5, 1, 3)
+    plt.subplot(3, 1, 2)
     plt.title(' Total Model Residual')
     plt.xlabel("Measured Position (pix)")
     plt.ylabel("Residual (nm)")
-    plt.legend(loc='upper right')
-
-    plt.subplot(5, 1, 4)
-    plt.title(' Total Model Residual')
-    plt.xlabel("Refernce Position (pix)")
-    plt.ylabel("Residual (nm)")
-    plt.legend(loc='upper right')
+    #plt.legend(loc='upper right')
+    plt.tight_layout()
 
     
-    plt.subplot(5, 1, 1)
+    #plt.subplot(5, 1, 4)
+    #plt.title(' Total Model Residual')
+    #plt.xlabel("Reference Position (pix)")
+    #plt.ylabel("Residual (nm)")
+    #plt.legend(loc='upper right')
+    #plt.tight_layout()
+
+    
+    plt.subplot(3, 1, 1)
     plt.title("Input Pattern Error")
     plt.xlabel("Measured Position (pix)")
     plt.ylabel("Input Deviation (nm)")
-    plt.legend(loc='upper right')
+    #plt.legend(loc='upper right')
+    plt.tight_layout()
 
-    plt.subplot(5, 1, 2)
-    plt.title("Linear Model Residuals")
-    plt.xlabel("Measured Position (pix)")
-    plt.ylabel("Residual (nm)")
-    plt.legend(loc='upper right')
+    #plt.subplot(5, 1, 2)
+    #plt.title("Linear Model Residuals")
+    #plt.xlabel("Measured Position (pix)")
+    #plt.ylabel("Residual (nm)")
+    #plt.legend(loc='upper right')
+    #plt.tight_layout()
 
-    plt.subplot(5, 1, 5)
+    plt.subplot(3, 1, 3)
     plt.title('Model Camera Distortion')
     plt.xlabel("Measured position (pix)")
     plt.ylabel('Camaera Distoriton (nm)')
@@ -576,7 +492,7 @@ def com_mod(inco, xmeas, xref,fix_scale, fix_trans,init_guess, mdist=True, evalu
                 _xtrans = inco[2*i]*xmeas[i] + init_guess[2*i+1] +  inco[-1]*xmeas[i]**2
                 
             elif not fix_scale and not fix_trans:
-                _xtrans = inco[2*i] * xmeas[i] + inco[-1]*xmeas[i]**2
+                _xtrans = inco[2*i] * xmeas[i] + inco[2*i+1] + inco[-1]*xmeas[i]**2
         else:
             _xtrans = inco[2*i] * xmeas[i] + inco[2*i+1] 
         diff.append(_xtrans - xref[i])
@@ -725,36 +641,150 @@ def mkplots_2(refn, xpin, ypin, cb, __dx, __dy):
     print('RMS Pattern deviation mistake X:', np.std(_dx_mod-_dx_input)*6000.0, np.std(_dy_mod-_dy_input)*6000.0)
     plt.tight_layout()
 
+def mk_debug_plots(ref, xln, yln):
+        t4p = transforms.four_paramNW(ref['x'][cbool], ref['y'][cbool], xln[-1], yln[-1])
+        _xev, _yev = t4p.evaluate(ref['x'][cbool], ref['y'][cbool])
+        
+        plt.figure(1234)
+        plt.subplot(2, 1, 1)
+        #import pdb;pdb.set_trace()
+        plt.scatter(xln[-1], ( xln[-1] - _xev)*6000.0, label='cat '+str(i))
+        plt.title("Total Deviation from Square (4p)")
+        plt.xlabel('X camera (pix)')
+        plt.ylabel("X Difference (nm)")
+        plt.vlines([7263, 965], -50, 600, color='red')
+        plt.legend(loc='lower right')
 
-def mkdist():
+        plt.subplot(2, 1, 2)
+        plt.scatter(yln[-1], ( yln[-1] - _yev)*6000.0, label='cat '+str(i))
+        plt.title("Total Deviation from Square (4p)")
+        plt.xlabel('Y camera (pix)')
+        plt.ylabel("Y Difference (nm)")
+        plt.vlines([490, 5218], -600, 50, color='red')
+        plt.legend(loc='lower right')
+
+        plt.tight_layout()
+        if plot_in:
+            plt.figure(10+i)
+            q = plt.quiver(xln[-1], yln[-1], xln[-1] - _xev, yln[-1] - _yev, scale =10)
+        
+            plt.quiverkey(q, -50, -50, 0.1, '600 nm', coordinates='data', color='red')
+            plt.axes().set_aspect('equal')
+            plt.xlabel("X camera (pix)")
+            plt.ylabel("Y camera (pix)")
+            plt.title('Total Deviation from Square Catalog '+str(i))
+
+            plt.figure(130+i)
+            plt.subplot(2, 1,  1)
+            plt.scatter(xln[-1], yln[-1], c=(xln[-1] - _xev)*6000)
+            plt.title('Total Deviation from Square Catalog '+str(i))
+            plt.xlabel('X camera (pix)')
+            plt.ylabel('Y camera (pix)')
+            plt.colorbar()
+
+            plt.subplot(2,1,  2)
+            plt.scatter(xln[-1], yln[-1], c=(yln[-1] - _yev)*6000.0)
+            plt.title('Total Deviation from Square Catalog '+str(i))
+            plt.xlabel('X camera (pix)')
+            plt.ylabel('Y camera (pix)')
+            plt.colorbar()
+        
+
+        plt.figure(100)
+        colors = ['black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray']
+            
+        q = plt.quiver(xln[-1], yln[-1], xln[-1] - _xev, yln[-1] - _yev, scale =20, color=colors[i], label='cat '+str(i))
+        
+        plt.quiverkey(q, -50, -50, 0.1, '600 nm', coordinates='data', color='red')
+        plt.axes().set_aspect('equal')
+        plt.xlabel("X camera (pix)")
+        plt.ylabel("Y camera (pix)")
+        plt.title('Total Deviation from Square')
+        plt.legend(loc='upper left')
+
+        
+        #fig, axes = plt.subplots(1, 2, 1)
+        
+        #plt.subplot(1, 2, 1)
+        return
+
+def mkdist(all=True):
+
+    if all:
+        td = transforms.PolyTransform(np.ones(10), np.ones(10), np.ones(10), np.ones(10), 3)
+        #here we use coeffiecients fit to distortion free model per s8, with order=3
+        td.px.c0_0 = 0.0 #-1613/6000.0
+        td.px.c1_0 = 0.0
+        td.px.c0_1 = 0.0
+        
+        td.px.c2_0 =  7.1*10**-9
+        td.px.c1_1 = 5.5*10**-9
+        td.px.c0_2 = 5.53*10**-9
+
+        td.px.c3_0 = -9*10**-13
+        td.px.c2_1 = 3.5*10**-12
+        td.px.c1_2 = -2.4*10**-13
+        td.px.c0_3 = 0.7*10**-13
+        
+        td.py.c0_0 = 0.0 #438 / 6000.0
+        td.py.c1_0 = 0.0
+        td.py.c0_1 = 0.0
+        
+        td.py.c2_0 =  4.04*10**-9
+        td.py.c1_1 =  1.6*10**-9
+        td.py.c0_2 =  1.3*10**-9
+        
+        td.py.c3_0 =  -1.46 * 10**-13
+        td.py.c2_1 =  -1.3 * 10**-12
+        td.py.c1_2 =  1.35 * 10**-12
+        td.py.c0_3 =  -5.09 * 10**-12
+    else:
+        td = transforms.PolyTransform(np.ones(10), np.ones(10), np.ones(10), np.ones(10), 2)
+        td.px.c0_0 = 0
+        td.px.c1_0 = 0
+        td.px.c0_1 = 0
+
+        td.px.c2_0 = 4 * 10**-8
+        td.px.c1_1 = 0
+        td.px.c0_2 = 0
+
+        td.py.c0_0 = 0
+        td.py.c1_0 = 0
+        td.py.c0_1 = 0
+
+        td.py.c2_0 = 0
+        td.py.c1_1 = 0
+        td.py.c0_2 = 0
+
     
-    td = transforms.PolyTransform(np.ones(10), np.ones(10), np.ones(10), np.ones(10), 3)
-    #here we use coeffiecients fit to distortion free model per s8, with order=3
-    td.px.c0_0 = -1613/6000.0
-    td.px.c1_0 = 0.0
-    td.px.c0_1 = 0.0
-
-    td.px.c2_0 =  7.1*10**-9
-    td.px.c1_1 = 5.5*10**-9
-    td.px.c0_2 = 5.53*10**-9
-
-    td.px.c3_0 = -9*10**-13
-    td.px.c2_1 = 3.5*10**-12
-    td.px.c1_2 = -2.4*10**-13
-    td.px.c0_3 = 0.7*10**-13
-    
-    td.py.c0_0 = 438 / 6000.0
-    td.py.c1_0 = 0.0
-    td.py.c0_1 = 0.0
-
-    td.py.c2_0 =  4.04*10**-9
-    td.py.c1_1 =  1.6*10**-9
-    td.py.c0_2 =  1.3*10**-9
-
-    td.py.c3_0 =  -1.46 * 10**-13
-    td.py.c2_1 =  -1.3 * 10**-12
-    td.py.c1_2 =  1.35 * 10**-12
-    td.py.c0_3 =  -5.09 * 10**-12
-
     return td
     
+def prove_model():
+    inco = [10, 0, 1, -20, 1, 0, 12, 1, 0, 25, 0, 1,  4*10**-9, 0, 0, 0, 0, 2*10**-8]
+    coo = np.meshgrid(np.linspace(0, 5000, num=45), np.linspace(0, 5000, num=45))
+    xin = coo[0].flatten()
+    yin = coo[1].flatten()
+
+    #note, reference shoud make no difference when evaluating instead of fitting
+    xr = np.ones(len(xin))
+    yr = np.ones(len(yin))
+
+    xN = xin * inco[1] + yin * inco[2] + (xin-4000)**2 *4 * 10**-9 + inco[0]
+    yN = yin * inco[4] + yin * inco[5] + (yin-3000)**2 * 2*10**-8 + inco[3]
+
+    xN1 = xin * inco[7] + yin * inco[8] + (xin-4000)**2 *4 * 10**-9 +inco[6]
+    yN1 = yin * inco[10] + xin * inco[11] + (yin-3000)**2 * 2*10**-8+inco[9]
+
+    
+    
+
+    xn, yn, xrn, yrn = fit_all.com_mod(inco, [xin, xin], [yin, yin], [xr, xr], [yr, yr], evaluate=True, order=2)
+    print( np.std(xr - xrn), np.std(xN - xn))
+    assert np.std(xr - xrn) < 10**-9 
+    assert np.std(xN - xn[0]) < 10**-5
+    init_guess = fit_all.guess_co([xin, xin], [yin, yin], [xN, xN1], [yN , yN1], order=2)
+    res = leastsq(fit_all.com_mod, init_guess, args=([xin, xin], [yin, yin], [xN, xN1], [yN, yN1],False, inco, 2))
+    print(res[0])
+    outres = fit_all.com_mod(res[0], [xin, xin], [yin, yin], [xN, xN1], [yN, yN1],fix_trans=False, order=2, evaluate=False, init_guess=inco)
+    return outres
+        
