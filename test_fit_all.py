@@ -54,7 +54,7 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     #linear cross term
     t.px.c0_1 = 0 #0.00004
     #quadratic terms
-    t.px.c2_0 = 0# 2 * 10**-8
+    t.px.c2_0 = 2 * 10**-8
     t.px.c0_2 = 0 #-4 * 10**-9
     t.px.c1_1 =  0# 5 * 10**-10
 
@@ -82,7 +82,7 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     t.py.c1_2 = 0
     t.py.c0_3 = 0
 
-    t.py.c4_0 = 10**-14
+    t.py.c4_0 = 0# 10**-14
     t.py.c3_1 = 0
     t.py.c2_2 = 0
     t.py.c1_3 = 0
@@ -268,10 +268,14 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     plt.figure(2005)
     
     #_tl = transforms.PolyTransform(_dist['x']+_dxin, _dist['y']+_dyin, _dist['dx']+_dist['x'], _dist['dy']+_dist['y'], 1)
-    _tl = transforms.PolyTransform(_dist['x'], _dist['y'],_dxin, _dyin,  1)
+    _tl = transforms.PolyTransform(_dist['x'], _dist['y'],_dist['dx']+_dxin,_dist['dy']+ _dyin,  1)
     _xmd, _ymd = _tl.evaluate(_dist['x'], _dist['y'])
-    diffx = _dist['dx'] + _dxin
-    diffy = _dist['dy'] + _dyin
+
+    #_tl1 = transforms.PolyTransform(_dist['x'], _dist['y'],_dist['dx'], _dist['dy'],  1)
+    #_xmd1, _ymd1 = _tl.evaluate(_dist['x'], _dist['y'])
+    
+    diffx = _dist['dx'] + _dxin  - _xmd
+    diffy = _dist['dy'] + _dyin  - _ymd
     import pdb;pdb.set_trace()
     #diffx = _dist['dx']+_dxin
     #diffx = diffx - np.mean(diffx)
