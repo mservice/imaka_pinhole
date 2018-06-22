@@ -641,7 +641,7 @@ def trim_spat_ave(in_f='average_coo.txt', ref='../reference.txt', num_section_x=
         for j in range(len(bins_y)-1):
             #first find all the stars that are in the current bin
             sbool = (xm > bins_x[i])*(xm<bins_x[i+1])*(ym>bins_y[j])*(ym<bins_y[j+1])
-            print 'number of stars in this section are ', np.sum(sbool)
+            print('number of stars in this section are ', np.sum(sbool))
             #find the mean delta and sigma in x and y, using iterative sigma clipping
             ave_x, sig_x, nclipx = statsIter.mean_std_clip(xres[sbool], clipsig=3.0, return_nclip=True)
             ave_y, sig_y, nclipy = statsIter.mean_std_clip(yres[sbool], clipsig=3.0, return_nclip=True)
