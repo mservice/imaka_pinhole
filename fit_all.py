@@ -1449,7 +1449,7 @@ def com_mod4p(co, xin, yin, xr, yr,fix_trans=False, init_guess=None ,order = 2,e
  
     return tot
 
-def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2,evaluate=False, xnormfac=4000.0, ynormfac=4000.0):
+def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2,evaluate=False, xnormfac=4000.0, ynormfac=4000.0, ret_dist=False):
     '''
     add in deviations a a function of xr , yr up to second order ...
     drx =  c1 * x**2 + c2 * x*y + c3 * y**2
@@ -1500,7 +1500,7 @@ def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2
         #_ang = np.deg2rad(co[4*i+3])
         #xlin.append(co[4*i] + co[4*i+2] * (np.cos(_ang) * xin[i]  - np.sin(_ang) * yin[i]))
         #ylin.append(co[4*i+1] + co[4*i+2] * (np.sin(_ang) * xin[i] + np.cos(_ang) * yin[i]))
-        #import pdb;pdb.set_trace()
+    #import pdb;pdb.set_trace()
 
     xn = []
     yn = []
@@ -1535,7 +1535,14 @@ def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2
   
     xrn = xrL
     yrn = yrL
-    
+    if ret_dist:
+        xdist = []
+        ydist = []
+        #compute the deviations just from the distortion solution
+        for kk in range(len(xn)):
+            xdist.append((xn[kk] - xin[kk])*xnormfac)
+            ydist.append((yn[kk] - yin[kk])*ynormfac)
+        return xdist, ydist
     if evaluate:
         #need to renormalize
         xnn = []

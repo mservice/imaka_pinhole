@@ -788,3 +788,182 @@ def prove_model():
     outres = fit_all.com_mod(res[0], [xin, xin], [yin, yin], [xN, xN1], [yN, yN1],fix_trans=False, order=2, evaluate=False, init_guess=inco)
     return outres
         
+
+
+
+def test_cross(dev_pat=True, Niter=10,trim_cam=True, order=4, debug_plots=True, distort=False, order_pattern=1 ):
+    '''
+    The first version of this test is easy.  what if  we put in the best fit model of the distoriton as 100% pattern deviation
+    Ideally the output should see no power in the distortion solution and a lot of power in the pattern deviation
+    order_pattern == 1 keeps all orders of the distoriton as pattern deviation
+    '''
+
+    fit_all.mkrefcat(ang=0)
+    ref = Table.read('reference.txt', format='ascii.basic')
+    inco = Table.read('best_fit.txt', format='ascii.basic')
+    #only keep the linear terms
+    if order_pattern == 2:
+        #only keep the quadratic trerms from the distortion as pattern deviation
+        inco[-9:] = 0.0
+        inco[-21:-12] = 0.0
+        
+    if order_pattern == 3:
+        #4th order Y terms
+        inco[-5:] = 0
+        #2nd order Y terms
+        inco[-12:-10] = 0
+        #4th order x terms
+        inco[-17:-12] = 0
+        #2nd order x terms
+        inco[-24:-21] = 0
+
+    if order_pattern == 4:
+        #3rd order Y terms
+        inco[-9:-5] = 0
+        #2nd order Y terms
+        inco[-12:-9] = 0
+        #3rd order x terms
+        inco[-21:-18] = 0
+        #2nd order x terms
+        inco[-24:-21] = 0
+    #chop out the linear parameters at the begining of this array
+    inco = inco[-30:]
+
+    xmin = 0
+    xmax = np.inf
+    ymin = 0
+    ymax = np.inf
+    
+    xmin = 965.148
+    
+    xmax = 7263.57
+    
+    ymin = 490.87
+    ymax = 5218.0615
+    rb = (ref['x'] > xmin) * (ref['x'] < xmax) * (ref['y'] < ymax) * (ref['y'] > ymin)
+    print('input RMS deviations')
+    
+    #import pdb;pdb.set_trace()
+    dx, dy = fit_all.com_mod(inco['col0'], [ref['x']], [ref['y']], [ref['x']], [ref['y']], order=4, evaluate=True, ret_dist=True)
+    print(np.std(dx[0][rb])*6000, np.std(dy[0][rb])*6000)
+    
+    #sets the uncorreltated pattern deviations
+    _xerr = 0
+    _yerr = 0
+    xpin = ref['x'] + _xerr + dx
+    ypin = ref['y'] + _yerr + dy
+    xpin = np.array(xpin)
+    ypin = np.array(ypin)
+    
+    offsets_s = [[447-40.6, 5894-7055], [770-40.6, 5895-7055], [945-40.6, 5888-7055], [944-40.6, 5644-7055], [697-40.6, 5620-7055], [488-40.6, 5619-7055], [486-40.6, 5376-7055], [745-40.6, 5381-7055], [982-40.6, 5371-7055]]
+
+    colors = ['black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray','black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray', 'black', 'blue', 'green', 'purple', 'brown', 'magenta', 'teal', 'yellow', 'gray']
+
+    offsets = []
+    rot_ang = []
+    offsets_in = []
+    for k in range(len(offsets_s)):
+        offsets.append(offsets_s[k])
+        rot_ang.append(0)
+
+    xlis = []
+    ylis = []
+
+    for _iii, _off in enumerate(offsets):
+        _ang =  -1.0*np.deg2rad(rot_ang[_iii])
+        _xtmp = (xpin-4000)*np.cos(_ang) - (ypin-3000)*np.sin(_ang)
+        _ytmp = (ypin-3000)*np.cos(_ang) + (xpin-4000)*np.sin(_ang)
+        #now we need to move the measured coordiantes such that the lowest value points (lower left) is at offsets[i][0,1]
+        #import pdb;pdb.set_trace()    
+        _dx = _off[0]  + 4000
+        _dy = _off[1]  + 3000
+        
+        xlis.append(_xtmp + _dx)
+        ylis.append(_ytmp + _dy)
+
+        offsets_in.append(((xlis[-1][0]),ylis[-1][0]) )
+
+        #if _ang != 0:
+        #    import pdb;pdb.set_trace()
+                
+        print(offsets_in[-1])
+
+        if debug_plots:
+            plt.figure(2)
+            plt.scatter(xlis[-1], ylis[-1], label='catalog '+str(_iii))
+            plt.title('Measured Position with no distortion')
+            plt.legend(loc='upper right')
+            
+    if distort:
+        xln = []
+        yln = []
+        dx, dy =  fit_all.com_mod(inco['col0'], xlis, ylis, xlis, ylis, order=4, evaluate=True, ret_dist=True)
+        import pdb;pdb.set_trace()
+        for i in range(len(xlis)):
+            xln.append(xlis[i] + dx[i])
+            yln.append(ylis[i] + dy[i])
+        xlis = xln
+        ylis = yln
+    res = fit_all.simul_wref(xlis, ylis, offsets,  order=order, rot_ang=rot_ang, Niter=Niter, dev_pat=dev_pat, Nmissing=2, sig_clip=False, fourp=False, trim_cam=trim_cam, fix_trans=False, debug=True, plot_ind=False, trim_pin=False)
+   
+    
+    #import pdb;pdb.set_trace()
+    #return 
+    #if the fitting procedure has updated reference.txt with fixed coordiantes -> these should match xpin and ypin
+    refn = Table.read('reference_new.txt', format='ascii.basic')
+    cb = (refn['x'] - refn['xorig']) != 0.0
+    __dx = (refn['x'] - xpin) #this is the input deviation
+    __dy = (refn['y'] - ypin)
+   
+
+    #make scatter plots of the recovered pinhole deviation errors
+    plt.figure(2000)
+    mkplots_2(refn, xpin[0], ypin[0], cb, __dx, __dy)
+    #now we compare coefficients to the fit
+
+
+
+    fit_all.mksamp(outf='dist_test.txt', order=order)
+    _dist = Table.read('dist_test.txt', format='ascii.basic')
+
+  
+    _dxin = np.zeros(len(_dist['x']))
+    _dyin = np.zeros(len(_dist['y']))
+    #to do this comparrison you need to eliminate the linear terms in the input distortion
+    plt.figure(2005)
+    
+    #_tl = transforms.PolyTransform(_dist['x']+_dxin, _dist['y']+_dyin, _dist['dx']+_dist['x'], _dist['dy']+_dist['y'], 1)
+    _tl = transforms.PolyTransform(_dist['x'], _dist['y'],_dxin, _dyin,  1)
+    _xmd, _ymd = _tl.evaluate(_dist['x'], _dist['y'])
+    diffx = _dist['dx'] + _dxin
+    diffy = _dist['dy'] + _dyin
+    
+    #diffx = _dist['dx']+_dxin
+    #diffx = diffx - np.mean(diffx)
+    #diffy = _dist['dy']+_dyin
+    #diffy = diffy - np.mean(diffy)
+    plt.figure(2005)
+
+    plt.scatter(_dist['x'], _dist['y'], c=diffx*6000.0)
+    plt.title('X Camera Distortion Meaurement Mistake (model - input)')
+    plt.xlabel("X reference (pix)")
+    plt.ylabel("Y reference (pix)")
+    plt.colorbar()
+    plt.tight_layout()
+
+    plt.figure(2006)
+    plt.scatter(_dist['x'], _dist['y'], c=diffy*6000.0)
+    plt.title('Y Camera Distortion Measurement Mistake (model - input)')
+    plt.xlabel("X reference (pix)")
+    plt.ylabel("Y reference (pix)")
+    plt.colorbar()
+    plt.tight_layout()
+
+    plt.figure(2007)
+    plt.hist((diffx)*6000.0, histtype='step', label='x', lw=3)
+    plt.hist((diffy)*6000.0, histtype='step', label='y', lw=3)
+    plt.xlabel("Camera Distortion Meaurement Mistake (model - input)")
+    plt.ylabel("N")
+    plt.legend(loc='upper left')
+    co = Table.read('fit.txt', format='ascii.basic')
+    #have to compate like to like coefficients
