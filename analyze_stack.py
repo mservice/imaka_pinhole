@@ -1204,7 +1204,7 @@ def fit_from_cat(reflis='ref.lis', fitord=3, xrefkey='xr', yrefkey='yr', spatfil
     #sigy = np.std(dy)
     #gbool = (dx < dx + cfac*sigx)*(dx > dx - cfac*sigx)*(dy > dy - cfac*sigy)*(dy < dy + cfac*sigy)
     gbool = np.ones(len(dx), dtype='bool')
-    print 'Number of sources trimmed: ', len(gbool)-np.sum(gbool), ' of ', len(gbool)
+    print('Number of sources trimmed: ', len(gbool)-np.sum(gbool), ' of ', len(gbool))
     t = transforms.LegTransform(x[gbool], y[gbool], dx[gbool], dy[gbool], fitord)
     dxm, dym = t.evaluate(x, y)
     return x, y, dx, dy, dxm, dym, t
@@ -1223,13 +1223,13 @@ def spat_filt(x, y, dx, dy, num_section=8, sig_fac=5):
         for j in range(len(binsy)-1):
             #first find all the stars that are in the current bin
             sbool = (x > binsx[i])*(x<binsx[i+1])*(y>binsy[j])*(y<binsy[j+1])
-            print 'number of stars in this section are ', np.sum(sbool)
+            print('number of stars in this section are ', np.sum(sbool))
             #find the mean delta and sigma in x and y, using iterative sigma clipping
             ave_x, sig_x, nclipx = statsIter.mean_std_clip(dx[sbool], clipsig=3.0, return_nclip=True)
             ave_y, sig_y, nclipy = statsIter.mean_std_clip(dy[sbool], clipsig=3.0, return_nclip=True)
             #creates boolean 
             good_bool = (dx < ave_x + sig_fac * sig_x)*(dx > ave_x - sig_fac * sig_x)*(dy < ave_y + sig_fac *sig_x)*(dy > ave_y - sig_fac * sig_x) * sbool
-            print 'number of stars cut ', np.sum(sbool) - np.sum(good_bool) 
+            print('number of stars cut ', np.sum(sbool) - np.sum(good_bool) )
             
             for ii in range(np.sum(good_bool)):
                 xout.append(x[good_bool][ii])
