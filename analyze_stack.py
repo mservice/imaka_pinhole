@@ -102,11 +102,18 @@ def mkref(xin, yin, fittype='four',  trim=False, gspace=170, ang=0):
     yr = yr  -np.median(yr) + yin[origin_arg]
 
     #import pdb;pdb.set_trace()
-    idx1, idx2, dr, dm = match.match(xr, yr, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 150)
+    idx1, idx2, dr, dm = match.match(xr, yr, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 60)
     dx = xr[idx1][0] - xin[idx2][0]
     dy = yr[idx1][0] - yin[idx2][0]
+    t = transforms.four_paramNW(xin[idx2], yin[idx2], xr[idx1], yr[idx1])
+    xn, yn = t.evaluate(xin[idx2], yin[idx2])
     
-    idx1, idx2, dr, dm = match.match(xr-dx, yr-dy, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 75)
+    idx1, idx2, dr, dm = match.match(xr-dx, yr-dy, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 30)
+    t = transforms.PolyTransform(xin[idx2], yin[idx2], xr[idx1], yr[idx1], 1)
+    xn, yn = t.evaluate(xin[idx2], yin[idx2])
+
+    idx1, idx2, dr, dm = match.match(xr, yr, np.ones(len(xr)) , xn , yn, np.ones(len(xin)) , 75)
+    import pdb;pdb.set_trace()
 
     #plt.clf()
     #plt.scatter(xin, yin)
@@ -130,9 +137,9 @@ def mkref(xin, yin, fittype='four',  trim=False, gspace=170, ang=0):
         #import pdb;pdb.set_trace()
     
     elif fittype=='quadratic':
-        t = transforms.PolyTransform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],2) 
+        t = transforms.polytransform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],2) 
     elif fittype=='cubic':
-        t = transforms.PolyTransform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],3) 
+        t = transforms.polytransform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],3) 
 
 
     #coo_r = np.sqrt(xref**2 + yref**2)
@@ -150,7 +157,7 @@ def compare2square(xin, yin, fit_ord=1,printcat=False, trim=True, gspace=180, an
    takes in coordinats of pinhole images 
     creates a square grid, matches the square grid to the measured positions using a linear tranformation (6 parameter)
     returns reference positions that are matched to the input positions.
-    Note -- All input positions should have a match, may require precleaning on input catalogs.
+    note -- all input positions should have a match, may require precleaning on input catalogs.
 
     subfunction return refernce locations
     '''
@@ -162,7 +169,7 @@ def compare2square(xin, yin, fit_ord=1,printcat=False, trim=True, gspace=180, an
 
     #now we have the reference coordinates, the next choice is to fit the distortion....
     if printcat:
-        outab = Table()
+        outab = table()
         outab['x'] = xnin
         outab['y'] = ynin
         outab['xr'] = xr[idx1]
