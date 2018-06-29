@@ -908,7 +908,7 @@ def test_cross(dev_pat=True, Niter=10,trim_cam=True, order=4, debug_plots=True, 
             yln.append(ylis[i] + dy[i])
         xlis = xln
         ylis = yln
-    res = fit_all.simul_wref(xlis, ylis, offsets,  order=order, rot_ang=rot_ang, Niter=Niter, dev_pat=dev_pat, Nmissing=2, sig_clip=False, fourp=False, trim_cam=trim_cam, fix_trans=False, debug=True, plot_ind=False, trim_pin=False)
+    res = fit_all.simul_wref(xlis, ylis, offsets,  order=order, rot_ang=rot_ang, Niter=Niter, dev_pat=dev_pat, Nmissing=10, sig_clip=False, fourp=False, trim_cam=trim_cam, fix_trans=False, debug=True, plot_ind=False, trim_pin=False)
    
     
     #import pdb;pdb.set_trace()
