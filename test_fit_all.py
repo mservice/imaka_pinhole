@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 from scipy.optimize import minimize, leastsq
 
-def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, debug_plots=False, order_pattern_error=False, trim_cam=False, fix_trans=False, fit=True, npos=3, rot_ang_l=[0, 90, 180, 270], step_size=250, Niter=5, plot_in=False, order=4, correct_ref=False, lab_offsets=False, plot_dist=True):
+def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, debug_plots=False, order_pattern_error=False, trim_cam=False, fix_trans=False, fit=True, npos=3, rot_ang_l=[0, 90, 180, 270], step_size=250, Niter=5, plot_in=False, order=4, correct_ref=False, lab_offsets=False, plot_dist=True, Nmissing=None, pattern_from_distortion=True, order_pattern=1):
     '''
     Test function for disotriotn fitting routine that includes altering the refernece positions 
     The fit_all.simul_wref() takes a list of xpositoins, ypositions and offsets, compares them to a perfect square reference and then fits for both the distortion and the pattern deviation
@@ -95,6 +95,62 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     ymin = 1000
     ymax = 5500
     cb = (ref['x'] < xmax) * (ref['x'] > xmin) * (ref['y'] < ymax) * (ref['y'] > ymin)
+
+    inco = Table.read('best_fit.txt', format='ascii.basic')
+    #only keep the linear terms
+    if order_pattern == 2:
+        #only keep the quadratic trerms from the distortion as pattern deviation
+        inco[-9:] = 0.0
+        inco[-21:-12] = 0.0
+        
+    if order_pattern == 3:
+        #4th order Y terms
+        inco[-5:] = 0
+        #2nd order Y terms
+        inco[-12:-10] = 0
+        #4th order x terms
+        inco[-17:-12] = 0
+        #2nd order x terms
+        inco[-24:-21] = 0
+
+    if order_pattern == 4:
+        #3rd order Y terms
+        inco[-9:-5] = 0
+        #2nd order Y terms
+        inco[-12:-9] = 0
+        #3rd order x terms
+        inco[-21:-18] = 0
+        #2nd order x terms
+        inco[-24:-21] = 0
+    #chop out the linear parameters at the begining of this array
+    inco = inco[-30:]
+
+    xmin = 0
+    xmax = np.inf
+    ymin = 0
+    ymax = np.inf
+    
+    xmin = 965.148
+    
+    xmax = 7263.57
+    
+    ymin = 490.87
+    ymax = 5218.0615
+    rb = (ref['x'] > xmin) * (ref['x'] < xmax) * (ref['y'] < ymax) * (ref['y'] > ymin)
+    print('input RMS deviations')
+    
+    #import pdb;pdb.set_trace()
+    dx_pd, dy_pd = fit_all.com_mod(inco['col0'], [ref['x']], [ref['y']], [ref['x']], [ref['y']], order=4, evaluate=True, ret_dist=True)
+    print(np.std(dx_pd[0][rb])*6000, np.std(dy_pd[0][rb])*6000)
+    #rb2 = np.invert(rb)
+    #dx_pd[0][rb2] = 0
+    #dy_pd[0][rb2] = 0
+
+    if not pattern_from_distortion:
+        dx_pd = 0
+        dy_pd = 0
+  
+    
     if order_pattern_error:
         dx, dy = t.evaluate(ref['x']-np.median(ref['x']), ref['y']-np.median(ref['y']))
     
@@ -108,8 +164,10 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
     _norm_pattern = scipy.stats.norm(loc=0, scale=pattern_error/6000.0)
     _xerr = _norm_pattern.rvs(len(ref['x']))
     _yerr = _norm_pattern.rvs(len(ref['x']))
-    xpin = ref['x'] + _xerr + dx
-    ypin = ref['y'] + _yerr + dy
+    xpin = ref['x'] + _xerr + dx + dx_pd
+    ypin = ref['y'] + _yerr + dy +dy_pd
+    xpin = np.array(xpin)[0]
+    ypin = np.array(ypin)[0]
     plt.close('all')
 
     if correct_ref:
@@ -159,8 +217,8 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
         _dx = _off[0]  + 4000
         _dy = _off[1]  + 3000
         
-        xlis.append(_xtmp + _dx)
-        ylis.append(_ytmp + _dy)
+        xlis.append(np.array(_xtmp + _dx))
+        ylis.append(np.array(_ytmp + _dy))
 
         offsets_in.append(((xlis[-1][0]),ylis[-1][0]) )
 
@@ -237,6 +295,8 @@ def test(err=0, mknewcat=True, pattern_error=100, dev_pat=True, distort=True, de
         res = leastsq(fit_all.com_mod, init_guess, args=(xln, yln, xrnC, yrnC, fix_trans, init_guess, order))
         outres = fit_all.com_mod(res[0], xln, yln, xrnC, yrnC,fix_trans=fix_trans, order=order, evaluate=False, init_guess=init_guess)
         return outres, res
+    if Nmissing is None:
+        Nmissing = len(xln)+1
     res = fit_all.simul_wref(xln, yln, offsets_in,  order=order, rot_ang=rot_ang, Niter=Niter, dev_pat=dev_pat, Nmissing=len(xln)+1, sig_clip=False, fourp=False, trim_cam=trim_cam, fix_trans=fix_trans, debug=True, plot_ind=plot_in, trim_pin=False)
    
     
@@ -850,6 +910,9 @@ def test_cross(dev_pat=True, Niter=10,trim_cam=True, order=4, debug_plots=True, 
     #import pdb;pdb.set_trace()
     dx, dy = fit_all.com_mod(inco['col0'], [ref['x']], [ref['y']], [ref['x']], [ref['y']], order=4, evaluate=True, ret_dist=True)
     print(np.std(dx[0][rb])*6000, np.std(dy[0][rb])*6000)
+    rb2 = np.invert(rb)
+    dx[0][rb2] = 0
+    dy[0][rb3] = 0
     
     #sets the uncorreltated pattern deviations
     _xerr = 0
