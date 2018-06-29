@@ -872,7 +872,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
         #take out median translation and rematch
         _dx = np.median(xang[cbool][idx1] - ref['x'][idx2])
         _dy = np.median(yang[cbool][idx1] - ref['y'][idx2])
-        idx1N, idx2N, drm, dr = match.match(xang - _dx, yang- _dy,np.zeros(len(xlis[i])), ref['x'], ref['y'], np.zeros(len(ref)),100)
+        idx1N, idx2N, drm, dr = match.match(xang - _dx, yang- _dy,np.zeros(len(xang)), ref['x'], ref['y'], np.zeros(len(ref)),100)
         assert len(idx1) > 350
         assert len(idx1N) >= len(idx1)
 
