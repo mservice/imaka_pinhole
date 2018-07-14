@@ -59,7 +59,7 @@ def mkave(lisf = 'lis.lis', xl=150, xh=5850, yl=800, yh=6032, retmask=False, ret
         
 
         
-def mkref(xin, yin, fittype='four',  trim=False, gspace=170, ang=0):
+def mkref(xin, yin, fittype='four',  trim=False, gspace=170, ang=0, ymag=1.07):
     '''
     '''
 
@@ -69,10 +69,10 @@ def mkref(xin, yin, fittype='four',  trim=False, gspace=170, ang=0):
          yl=800
          yh=6032
     else:
-        xl = 150
-        xh = 8270
-        yl = 700
-        yh = 5980
+        xl = 0 #150
+        xh = 100000 #8270
+        yl = 0 #700
+        yh = 100000 #5980
         
     inbool = (xin > xl) * (xin < xh) * (yin > yl) * (yin < yh)
     xin = xin[inbool]
@@ -81,12 +81,13 @@ def mkref(xin, yin, fittype='four',  trim=False, gspace=170, ang=0):
     xmed = np.median(xin)
     ymed = np.median(yin)
     
+    
     origin_arg = np.argmin((xin-xmed)**2 + (yin-ymed)**2)
     
     #gspace = 180
     #gspace = 170
     xref = np.array(range(50)) * gspace
-    yref = np.array(range(50)) * gspace
+    yref = np.array(range(50)) * gspace / 1.07
 
     coo = np.meshgrid(xref, yref)
     xr = coo[0].flatten()
@@ -96,24 +97,24 @@ def mkref(xin, yin, fittype='four',  trim=False, gspace=170, ang=0):
     xr = np.cos(_ang) * xr - np.sin(_ang) * yr
     yr = np.sin(_ang) * xr + np.cos(_ang) * yr
     
-    
-    
-    xr = xr - np.median(xr) + xin[origin_arg]
-    yr = yr  -np.median(yr) + yin[origin_arg]
+    #import pdb;pdb.set_trace()
+    refo = np.argmin((xr-np.median(xr))**2+(yr-np.median(yr))**2)
+    xr = xr - xr[refo] + xin[origin_arg]
+    yr = yr - yr[refo] + yin[origin_arg]
 
     #import pdb;pdb.set_trace()
     idx1, idx2, dr, dm = match.match(xr, yr, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 60)
-    dx = xr[idx1][0] - xin[idx2][0]
-    dy = yr[idx1][0] - yin[idx2][0]
-    t = transforms.four_paramNW(xin[idx2], yin[idx2], xr[idx1], yr[idx1])
-    xn, yn = t.evaluate(xin[idx2], yin[idx2])
+    #dx = xr[idx1][0] - xin[idx2][0]
+    #dy = yr[idx1][0] - yin[idx2][0]
+    #t = transforms.four_paramNW(xin[idx2], yin[idx2], xr[idx1], yr[idx1])
+    #xn, yn = t.evaluate(xin[idx2], yin[idx2])
     
-    idx1, idx2, dr, dm = match.match(xr-dx, yr-dy, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 30)
+    #idx1, idx2, dr, dm = match.match(xr-dx, yr-dy, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 30)
     t = transforms.PolyTransform(xin[idx2], yin[idx2], xr[idx1], yr[idx1], 1)
-    xn, yn = t.evaluate(xin[idx2], yin[idx2])
+    xn, yn = t.evaluate(xin, yin)
 
     idx1, idx2, dr, dm = match.match(xr, yr, np.ones(len(xr)) , xn , yn, np.ones(len(xin)) , 75)
-    import pdb;pdb.set_trace()
+    #import pdb;pdb.set_trace()
 
     #plt.clf()
     #plt.scatter(xin, yin)
@@ -680,7 +681,7 @@ def plot_var(inlis='lis.lis', stars_index=None):
     plt.ylabel('Deviation (pixels)')
     plt.savefig('var.png')
 
-def plot_var_from_ar(xshift, yshift, fall , stars_index=None, print_off=True, lin_fit=False):
+def plot_var_from_ar(xshift, yshift, fall , stars_index=None, print_off=True, lin_fit=True, pscale=6000):
 
     xave = np.median(xshift, axis=1)
     yave = np.median(yshift, axis=1)
@@ -762,13 +763,14 @@ def plot_var_from_ar(xshift, yshift, fall , stars_index=None, print_off=True, li
     xnim, xavar, xavarerr, xrms, xrmserr = calc_var_n(xn.T, stars_index=stars_index)
     ynim, yavar, yavarerr, yrms, yrmserr = calc_var_n(yn.T, stars_index=stars_index)
     fnim, favar, favarerr, frms, frmserr = calc_var_n(fall.T, stars_index=stars_index)
-    
+
+    print('pixel scale is ', pscale, ' nm')
     plt.figure(18)
     plt.clf()
-    plt.loglog(xnim, np.array(xavar)*6000, label='allan x')
-    plt.loglog(xnim,  np.array(xrms)*6000, label='rms x')
-    plt.loglog(ynim,  np.array(yavar)*6000, label='allan y')
-    plt.loglog(ynim,  np.array(yrms)*6000, label='rms y')
+    plt.loglog(xnim, np.array(xavar)*pscale, label='allan x')
+    plt.loglog(xnim,  np.array(xrms)*pscale, label='rms x')
+    plt.loglog(ynim,  np.array(yavar)*pscale, label='allan y')
+    plt.loglog(ynim,  np.array(yrms)*pscale, label='rms y')
     
     plt.loglog(xnim, 1.0/(np.array(xnim))**0.5 * 260, color='black')
     plt.legend(loc='upper right')
@@ -835,7 +837,7 @@ def plot_var_from_ar(xshift, yshift, fall , stars_index=None, print_off=True, li
     
     return xn, yn
 
-def plot_ind_shift(xshift, yshift, fall, stars_index=None):
+def plot_ind_shift(xshift, yshift, fall, stars_index=None, pscale=9000):
     '''
     '''
 
@@ -844,8 +846,8 @@ def plot_ind_shift(xshift, yshift, fall, stars_index=None):
     xn = xshift
     yn = yshift
 
-    dx = np.mean(xn[:,0:50], axis=1) - np.mean(xn[:,-50:], axis=1)
-    dy = np.mean(yn[:,0:50], axis=1) - np.mean(yn[:,-50:], axis=1)
+    dx = np.mean(xn[:,0:15], axis=1) - np.mean(xn[:,-15:], axis=1)
+    dy = np.mean(yn[:,0:15], axis=1) - np.mean(yn[:,-15:], axis=1)
 
     #now cut out stars with any data point more than 2 pix from the average
 
@@ -855,13 +857,13 @@ def plot_ind_shift(xshift, yshift, fall, stars_index=None):
             tbool[i] = False
         #if np.max(np.abs(xshift[i,:] - np.mean(xshift[i,:]))) < .15 or np.max(np.abs(yshift[i,:] - np.mean(yshift[i,:]))) < 0.15 :
         #    tbool[i] = False
-    print(np.sum(tbool))
+    print(np.sum(tbool), 'out of ',len(tbool), 'stars remain')
     plt.figure(47)
     plt.clf()
     #plt.subplot(211)
     plt.title('Shift in each pinhole')
     q = plt.quiver(xave[tbool],yave[tbool], dx[tbool], dy[tbool], scale=0.25, width=0.0022, color='black')
-    qk = plt.quiverkey(q, 500, 5500, .0125, str(round(6000*.0125, 3))+' nm', coordinates='data', color='green')
+    qk = plt.quiverkey(q, 500, 5500, .0125, str(round(pscale*.0125, 3))+' nm', coordinates='data', color='green')
     plt.xlim(0, 8000)
     plt.ylim(0, 6500)
     plt.axes().set_aspect('equal')
@@ -873,7 +875,7 @@ def plot_ind_shift(xshift, yshift, fall, stars_index=None):
     #plt.subplot(212)
     plt.title('Deviation in Shift in each pinhole')
     q = plt.quiver(xave[tbool],yave[tbool], dx[tbool]-np.mean(dx[tbool]), dy[tbool]-np.mean(dy[tbool]), scale=0.25, width=0.0022, color='black')
-    qk = plt.quiverkey(q, 500, 5500, .0125, str(round(6000*.0125, 3))+' nm', coordinates='data', color='green')
+    qk = plt.quiverkey(q, 500, 5500, .0125, str(round(pscale*.0125, 3))+' nm', coordinates='data', color='green')
     plt.xlim(0, 8000)
     plt.ylim(0, 6500)
     plt.axes().set_aspect('equal')
@@ -885,7 +887,7 @@ def plot_ind_shift(xshift, yshift, fall, stars_index=None):
     plt.xlim(0,8000)
     plt.ylim(0,6500)
 
-    xn, yn = plot_var_from_ar(xshift[tbool,:], yshift[tbool,:],fall[tbool,:], stars_index=stars_index)
+    xn, yn = plot_var_from_ar(xshift[tbool,:], yshift[tbool,:],fall[tbool,:], stars_index=stars_index, pscale=pscale)
     return xn, yn, xshift[tbool, :], yshift[tbool,:]
 
 def pix_phase(xn, yn, xall, yall, save_off=True):
