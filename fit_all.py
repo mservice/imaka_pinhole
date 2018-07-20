@@ -701,6 +701,7 @@ def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, a
         if iterate:
             if np.sum(gbool) < len(gbool):
                 xr, yr, xnin, ynin, xres, yres, t  = analyze_stack.compare2square(xnin[gbool] , ynin[gbool], trim=False, gspace=gspace, ang=ang)
+                #import pdb;pdb.set_trace()
                 _t = transforms.LegTransform(xnin, ynin, xr, yr, order, xmin=xmin, ymin=ymin, xmax = xmax, ymax=ymax)#,weights=1/(xerr**2+yerr**2)**0.5)
                 xn, yn = _t.evaluate(xnin, ynin)
                 #xn = xnin - _dxn
@@ -711,7 +712,7 @@ def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, a
                 _ystd = np.std(_yres)
                 _xa, _xe= stats.mean_std_clip(_xres)
                 _ya, _ye= stats.mean_std_clip(_yres)
-                gbool = (_xres  < 3 * _xe + _xa) * (_xres > -3 * _xe +_xa) * (_yres < 3 * _ye + _ya) * (_yres > -3* _ye + _ya)
+                gbool = (_xres  < 3.5 * _xe + _xa) * (_xres > -3.5 * _xe +_xa) * (_yres < 3.5 * _ye + _ya) * (_yres > -3.5* _ye + _ya)
                 
             else:
                 bad = False
@@ -730,6 +731,21 @@ def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, a
     #import pdb;pdb.set_trace()
     np.savetxt('Legpx.txt', _t.px.parameters)
     np.savetxt('Legpy.txt', _t.py.parameters)
+    _or = Table()
+    _or['xm'] = xnin
+    _or['ym'] = ynin
+    _or['xr'] = xr
+    _or['yr'] = yr
+    _or['dx'] = xn-xnin
+    _or['dy'] = yn - ynin
+    _or['xres'] = _xres
+    _or['yres'] = _yres
+    idx1, idx2, dm, dr = match.match(stack['x'], stack['y'], np.ones(len(stack)), xnin, ynin, np.ones(len(xnin)), 5)
+    _or['xerr'] = np.ones(len(_or['xm']))
+    _or['yerr'] = np.ones(len(_or['xm']))
+    _or['xerr'][idx2] = stack['xerr'][idx1]
+    _or['yerr'][idx2] = stack['yerr'][idx1]
+    _or.write('fit_cat.txt',format='ascii.fixed_width')
     if mklook:
         mklookup_from_trans(_t, lf, xl=xmin+500, xh=xmax-500, yl=ymin+500, yh=ymax-500 )
     
@@ -738,7 +754,7 @@ def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, a
 
     
     #save the coefficients
-    analyze_stack.mkquiver(xnin, ynin, _xres , _yres, frac_plot=1, scale=.25, fig_n=1555, scale_size=.01, xl=xl-500, xh=xh+500, yl=yl-500, yh=yh+500)
+    analyze_stack.mkquiver(xnin, ynin, _xres , _yres, frac_plot=1, scale=.25, fig_n=1555, scale_size=.01, xl=xmin-500, xh=xmax+500, yl=ymin-500, yh=ymax+500)
     plt.figure(1556)
     plt.clf()
     plt.hist(_xres*6000.0, bins=30, histtype='step', label='x')
@@ -2149,3 +2165,55 @@ def legendre(x, order, cart=False):
         return 0.5*(5*x**3 - 3*x)
     elif order ==4:
         return 1/8.0 * (35 * x**4 - 30*x**2 +3)
+
+def plot_sing_fit(incat='fit_cat.txt'):
+    '''
+    '''
+
+    cat = Table.read(incat, format='ascii.fixed_width')
+
+    
+    plt.figure(1)
+    plt.clf()
+    t = transforms.PolyTransform(cat['xm'], cat['ym'], cat['dx'], cat['dy'], 1)
+    dxl, dyl = t.evaluate(cat['xm'], cat['ym'])
+
+
+    plt.subplot(3, 2, 1)
+    plt.scatter(cat['xm'], cat['ym'], c=(cat['dx']-dxl))
+    cc = plt.colorbar()
+    cc.set_label('pixels')
+    plt.title('X Non-linear Distortion')
+
+    plt.subplot(3, 2, 2)
+    plt.scatter(cat['xm'], cat['ym'], c=(cat['dy']-dyl))
+    cc = plt.colorbar()
+    cc.set_label('pixels')
+    plt.title('Y Non-linear Distortion')
+
+    plt.subplot(3, 2, 3)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['xres']*9000.0)
+    cc = plt.colorbar()
+    cc.set_label('residual (nm)')
+    plt.title('X Model Residual')
+
+    plt.subplot(3, 2, 4)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['yres']*9000.0)
+    cc = plt.colorbar()
+    cc.set_label('residual (nm)')
+    plt.title('Y Model Residual')
+
+    plt.subplot(3, 2, 5)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['xerr']*9000.0)
+    cc = plt.colorbar()
+    cc.set_label('error (nm)')
+    plt.title('X measurement error')
+
+    plt.subplot(3, 2, 6)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['yerr']*9000.0)
+    cc = plt.colorbar()
+    cc.set_label('error (nm)')
+    plt.title('Y measurement error')
+
+    plt.tight_layout()
+    plt.savefig('single_cat.png')
