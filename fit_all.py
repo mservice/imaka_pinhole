@@ -454,6 +454,7 @@ def simul_ave_fit(xlis, ylis, offsets, order=4, xerr=None, yerr = None, refin=Fa
 
 def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=400, xh=8100, yl=150, yh=6000, ccut=False, flatcut=False, flux_cut=True, flux_cut_level=np.inf, trim_corners=False, trim_bright=True, ecut=False, transoff=False):
 
+   
     if not transoff:
         xall, yall , fall= match_pin.match_all(infile)
     else:
@@ -506,8 +507,9 @@ def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=40
     plt.figure(100)
     plt.clf()
     plt.subplot(121)
-    plt.plot(dx, 'o')
-    plt.plot(dy, 'o')
+    plt.plot(dx, 'o', label='x')
+    plt.plot(dy, 'o', label='y')
+    plt.legend(loc='upper right')
     plt.title('Translation offset')
     plt.subplot(122)
     plt.plot(df, 'o')
@@ -532,24 +534,24 @@ def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=40
             if np.min(np.sqrt((xave[i]-xb)**2+(yave[i]-yb)**2)) < 25:
                 gbool[i] = False
         cbool = cbool * gbool
-                
+    #import pdb;pdb.set_trace()
     xnew, ynew, dum, dummer = analyze_stack.plot_ind_shift(xall[cbool,:], yall[cbool,:], fall[cbool,:])
     xave = np.mean(xnew, axis=1)
     yave = np.mean(ynew, axis=1)
-    dx = np.mean(xnew[:,0:50], axis=1) - np.mean(xnew[:,-50:], axis=1)
-    dy = np.mean(ynew[:,0:50], axis=1) - np.mean(ynew[:,-50:], axis=1)
+    dx = np.mean(xnew[:,0:15], axis=1) - np.mean(xnew[:,-15:], axis=1)
+    dy = np.mean(ynew[:,0:15], axis=1) - np.mean(ynew[:,-15:], axis=1)
     
-    print(np.mean(dx)*6000.0,np.std(dx)*6000.0)
-    print(np.mean(dy)*6000.0,np.std(dy)*6000.0)
+    print(np.mean(dx)*9000.0,np.std(dx)*9000.0)
+    print(np.mean(dy)*9000.0,np.std(dy)*9000.0)
     plt.figure(1111)
     plt.clf()
     plt.title('Deviation with 4 parameters fit removed')
-    q = plt.quiver(xave,yave, dx-np.mean(dx), dy-np.mean(dy), scale=0.25, width=0.0022, color='black')
-    qk = plt.quiverkey(q, 500, 5250, .0125, str(round(6000*.0125, 3))+' nm', coordinates='data', color='green')
-    plt.text(300,6270,'RMS x: '+str(np.round(np.std(dx)*6000.0)))
-    plt.text(300,6000,'RMS y: '+str(np.round(np.std(dy)*6000.0)))
-    plt.xlim(0, 8000)
-    plt.ylim(0, 6500)
+    q = plt.quiver(xave,yave, dx-np.mean(dx), dy-np.mean(dy), scale=1, width=0.0022, color='black')
+    qk = plt.quiverkey(q, np.min(xave), np.median(yave)+500, .0125, str(round(9000*.0125, 3))+' nm', coordinates='data', color='green')
+    plt.text(300,6270,'RMS x: '+str(np.round(np.std(dx)*9000.0)))
+    plt.text(300,6000,'RMS y: '+str(np.round(np.std(dy)*9000.0)))
+    plt.xlim(np.min(xave)-100, np.max(xave)+100)
+    plt.ylim(np.min(yave)-100, np.max(yave)+100)
     plt.axes().set_aspect('equal')
     plt.xlabel('X (pixels)')
     plt.ylabel('Y (pixels)')
@@ -666,7 +668,7 @@ def trim_center(in_f, rad=25):
     coo = coo[gb]
     coo.write(in_f, format='ascii.fixed_width')
     
-def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, ang=0, gspace=168, mklook=False, lf='lookup.fits', print_errors=True):
+def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, ang=0, gspace=168, mklook=False, lf='lookup.fits', print_errors=True, xmin=3000.0, xmax=10000.0, ymin=1800.0, ymax=8400.0, mklooktxt=False ):
     '''
     fits a single polynomial to averaged distoriton  data
     
@@ -699,7 +701,8 @@ def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, a
         if iterate:
             if np.sum(gbool) < len(gbool):
                 xr, yr, xnin, ynin, xres, yres, t  = analyze_stack.compare2square(xnin[gbool] , ynin[gbool], trim=False, gspace=gspace, ang=ang)
-                _t = transforms.LegTransform(xnin, ynin, xr, yr, order, xmin=0., ymin=0., xmax = 8000., ymax=7000.)#,weights=1/(xerr**2+yerr**2)**0.5)
+                #import pdb;pdb.set_trace()
+                _t = transforms.LegTransform(xnin, ynin, xr, yr, order, xmin=xmin, ymin=ymin, xmax = xmax, ymax=ymax)#,weights=1/(xerr**2+yerr**2)**0.5)
                 xn, yn = _t.evaluate(xnin, ynin)
                 #xn = xnin - _dxn
                 #yn = ynin - _dyn
@@ -709,14 +712,14 @@ def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, a
                 _ystd = np.std(_yres)
                 _xa, _xe= stats.mean_std_clip(_xres)
                 _ya, _ye= stats.mean_std_clip(_yres)
-                gbool = (_xres  < 3 * _xe + _xa) * (_xres > -3 * _xe +_xa) * (_yres < 3 * _ye + _ya) * (_yres > -3* _ye + _ya)
+                gbool = (_xres  < 3.5 * _xe + _xa) * (_xres > -3.5 * _xe +_xa) * (_yres < 3.5 * _ye + _ya) * (_yres > -3.5* _ye + _ya)
                 
             else:
                 bad = False
         else:
             bad = False
-            xr, yr, xnin, ynin, xres, yres, t  = analyze_stack.compare2square(xnin[gbool] , ynin[gbool], trim=False, gspace=168)
-            _t = transforms.LegTransform(xnin, ynin, xres, yres, order, xmin=0., ymin=0., xmax = 8000., ymax=7000.)#,weights=1/(xerr**2+yerr**2)**0.5)
+            xr, yr, xnin, ynin, xres, yres, t  = analyze_stack.compare2square(xnin[gbool] , ynin[gbool], trim=False, gspace=gspace)
+            _t = transforms.LegTransform(xnin, ynin, xres, yres, order, xmin=xmin, ymin=ymin, xmax = xmax, ymax=ymax)#,weights=1/(xerr**2+yerr**2)**0.5)
             _dxn, _dyn = _t.evaluate(xnin, ynin)
             xn = xnin - _dxn
             yn = ynin - _dyn
@@ -724,18 +727,34 @@ def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, a
             _yres = yn - yr
             _xstd = np.std(_xres)
             _ystd = np.std(_yres)
+            
     #import pdb;pdb.set_trace()
     np.savetxt('Legpx.txt', _t.px.parameters)
-    np.savetxt('Legpy.txt', _t.px.parameters)
+    np.savetxt('Legpy.txt', _t.py.parameters)
+    _or = Table()
+    _or['xm'] = xnin
+    _or['ym'] = ynin
+    _or['xr'] = xr
+    _or['yr'] = yr
+    _or['dx'] = xn-xnin
+    _or['dy'] = yn - ynin
+    _or['xres'] = _xres
+    _or['yres'] = _yres
+    idx1, idx2, dm, dr = match.match(stack['x'], stack['y'], np.ones(len(stack)), xnin, ynin, np.ones(len(xnin)), 5)
+    _or['xerr'] = np.ones(len(_or['xm']))
+    _or['yerr'] = np.ones(len(_or['xm']))
+    _or['xerr'][idx2] = stack['xerr'][idx1]
+    _or['yerr'][idx2] = stack['yerr'][idx1]
+    _or.write('fit_cat.txt',format='ascii.fixed_width')
     if mklook:
-        mklookup_from_trans(_t, lf)
+        mklookup_from_trans(_t, lf, xl=xmin+500, xh=xmax-500, yl=ymin+500, yh=ymax-500 )
     
     print('fit residual X', _xstd*6000.0, ' nm')
     print('fit residual Y', _ystd*6000.0, ' nm')
 
     
     #save the coefficients
-    analyze_stack.mkquiver(xnin, ynin, _xres , _yres, frac_plot=1, scale=.25, fig_n=1555, scale_size=.01)
+    analyze_stack.mkquiver(xnin, ynin, _xres , _yres, frac_plot=1, scale=.25, fig_n=1555, scale_size=.01, xl=xmin-500, xh=xmax+500, yl=ymin-500, yh=ymax+500)
     plt.figure(1556)
     plt.clf()
     plt.hist(_xres*6000.0, bins=30, histtype='step', label='x')
@@ -2041,24 +2060,38 @@ def mk_lookup(order, infit='fit.txt'):
     fits.writeto('dx.fits', dx-dxm)
     fits.writeto('dy.fits', dy-dym)
     
-def mklookup_from_trans(t,name='d.fits', xl=500, xh=6500, yl=140, yh=6000):
+def mklookup_from_trans(t,name='d.fits', xl=500, xh=6500, yl=140, yh=6000,mkfits=False):
     ''''
     '''
 
     x = np.linspace(xl,xh, num=int(xh-xl)+1)
     y = np.linspace(yl,yh, num=int(yh-yl)+1)
     coo = np.meshgrid(x,y)
-    
-    dx, dy = t.evaluate(coo[0],coo[1])
-    xmin = 965.148
-    xmax = 7263.57
-    ymin = 490.87
-    ymax = 5218.0615
-    gc = (coo[0] > xmin) * (coo[0] < xmax) * (coo[1] > ymin) * (coo[1] < ymax)
-    t = transforms.PolyTransform(coo[0][gc][::1000], coo[1][gc][::1000], dx[gc][::1000], dy[gc][::1000], 1)
-    dxm , dym = t.evaluate(coo[0], coo[1])
-    fits.writeto(name.replace('.fits', '_x.fits'), dx-dxm)
-    fits.writeto(name.replace('.fits', '_y.fits'), dy-dym)
+    if mkfits:
+        xn = coo[0].flatten()
+        yn = coo[1].flatten()
+    else:
+        xn = coo[0].flatten()[::100]
+        yn = coo[1].flatten()[::100]
+    dx, dy = t.evaluate(xn, yn)
+    xmin = xl# 965.148
+    xmax = xh#7263.57
+    ymin = yl#490.87
+    ymax = yh#5218.0615
+    gc = (xn > xmin) * (xn < xmax) * (yn > ymin) * (yn < ymax)
+    t = transforms.PolyTransform(xn[gc][::1000], yn[gc][::1000], dx[gc][::1000], dy[gc][::1000], 1)
+    dxm , dym = t.evaluate(xn, yn)
+    if mkfits:
+        fits.writeto(name.replace('.fits', '_x.fits'), dx-dxm)
+        fits.writeto(name.replace('.fits', '_y.fits'), dy-dym)
+    _out = Table()
+    _out['x'] = xn
+    _out['y'] = yn
+    _out['dx'] = dx
+    _out['dy'] = dy
+    _out['dxlr'] = dx-dxm
+    _out['dylr'] = dy-dym
+    _out.write('lookup.txt', format='ascii.basic')
 
 def mksamp(inf='fit.txt', order=3,  xl=965, xh=7263, yl=0, yh=5220, nsources=100, outf='dist.txt'):
     '''
@@ -2132,3 +2165,55 @@ def legendre(x, order, cart=False):
         return 0.5*(5*x**3 - 3*x)
     elif order ==4:
         return 1/8.0 * (35 * x**4 - 30*x**2 +3)
+
+def plot_sing_fit(incat='fit_cat.txt'):
+    '''
+    '''
+
+    cat = Table.read(incat, format='ascii.fixed_width')
+
+    
+    plt.figure(1)
+    plt.clf()
+    t = transforms.PolyTransform(cat['xm'], cat['ym'], cat['dx'], cat['dy'], 1)
+    dxl, dyl = t.evaluate(cat['xm'], cat['ym'])
+
+
+    plt.subplot(3, 2, 1)
+    plt.scatter(cat['xm'], cat['ym'], c=(cat['dx']-dxl))
+    cc = plt.colorbar()
+    cc.set_label('pixels')
+    plt.title('X Non-linear Distortion')
+
+    plt.subplot(3, 2, 2)
+    plt.scatter(cat['xm'], cat['ym'], c=(cat['dy']-dyl))
+    cc = plt.colorbar()
+    cc.set_label('pixels')
+    plt.title('Y Non-linear Distortion')
+
+    plt.subplot(3, 2, 3)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['xres']*9000.0)
+    cc = plt.colorbar()
+    cc.set_label('residual (nm)')
+    plt.title('X Model Residual')
+
+    plt.subplot(3, 2, 4)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['yres']*9000.0)
+    cc = plt.colorbar()
+    cc.set_label('residual (nm)')
+    plt.title('Y Model Residual')
+
+    plt.subplot(3, 2, 5)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['xerr']*9000.0)
+    cc = plt.colorbar()
+    cc.set_label('error (nm)')
+    plt.title('X measurement error')
+
+    plt.subplot(3, 2, 6)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['yerr']*9000.0)
+    cc = plt.colorbar()
+    cc.set_label('error (nm)')
+    plt.title('Y measurement error')
+
+    plt.tight_layout()
+    plt.savefig('single_cat.png')
