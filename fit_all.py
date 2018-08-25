@@ -7,6 +7,8 @@ from jlu.util import statsIter as stats
 from jlu.util import statsIter
 from astropy.io import fits
 from scipy.optimize import minimize, leastsq
+import pickle
+import scipy
 
 def stack_fit(subgroups=10, xkey='xt', ykey='yt', useref=True, infile='/Users/service/Pinhole/data/20170429/combo/lisO.lis'):
     '''
@@ -452,7 +454,7 @@ def simul_ave_fit(xlis, ylis, offsets, order=4, xerr=None, yerr = None, refin=Fa
         
     
 
-def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=400, xh=8100, yl=150, yh=6000, ccut=False, flatcut=False, flux_cut=True, flux_cut_level=np.inf, trim_corners=False, trim_bright=True, ecut=False, transoff=False):
+def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=50, xh=8100, yl=150, yh=8000, ccut=False, flatcut=False, flux_cut=True, flux_cut_level=np.inf, trim_corners=False, trim_bright=True, ecut=False, transoff=False, scale=6000):
 
    
     if not transoff:
@@ -535,21 +537,21 @@ def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=40
                 gbool[i] = False
         cbool = cbool * gbool
     #import pdb;pdb.set_trace()
-    xnew, ynew, dum, dummer = analyze_stack.plot_ind_shift(xall[cbool,:], yall[cbool,:], fall[cbool,:])
+    xnew, ynew, dum, dummer = analyze_stack.plot_ind_shift(xall[cbool,:], yall[cbool,:], fall[cbool,:], pscale=scale)
     xave = np.mean(xnew, axis=1)
     yave = np.mean(ynew, axis=1)
     dx = np.mean(xnew[:,0:15], axis=1) - np.mean(xnew[:,-15:], axis=1)
     dy = np.mean(ynew[:,0:15], axis=1) - np.mean(ynew[:,-15:], axis=1)
     
-    print(np.mean(dx)*9000.0,np.std(dx)*9000.0)
-    print(np.mean(dy)*9000.0,np.std(dy)*9000.0)
+    print(np.mean(dx)*scale,np.std(dx)*scale)
+    print(np.mean(dy)*scale,np.std(dy)*scale)
     plt.figure(1111)
     plt.clf()
     plt.title('Deviation with 4 parameters fit removed')
     q = plt.quiver(xave,yave, dx-np.mean(dx), dy-np.mean(dy), scale=1, width=0.0022, color='black')
-    qk = plt.quiverkey(q, np.min(xave), np.median(yave)+500, .0125, str(round(9000*.0125, 3))+' nm', coordinates='data', color='green')
-    plt.text(300,6270,'RMS x: '+str(np.round(np.std(dx)*9000.0)))
-    plt.text(300,6000,'RMS y: '+str(np.round(np.std(dy)*9000.0)))
+    qk = plt.quiverkey(q, np.min(xave), np.median(yave)+500, .0125, str(round(scale*.0125, 3))+' nm', coordinates='data', color='green')
+    plt.text(300,6270,'RMS x: '+str(np.round(np.std(dx)*scale)))
+    plt.text(300,6000,'RMS y: '+str(np.round(np.std(dy)*scale)))
     plt.xlim(np.min(xave)-100, np.max(xave)+100)
     plt.ylim(np.min(yave)-100, np.max(yave)+100)
     plt.axes().set_aspect('equal')
@@ -584,7 +586,7 @@ def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=40
         ystd = np.std(yerr)
 
         ebool = (xerr < xstd * 4) * (yerr < ystd * 4)
-        xnew, ynew, dum, dummer = analyze_stack.plot_ind_shift(xall[cbool,:][ebool,:], yall[cbool,:][ebool,:], fall[cbool,:][ebool,:])
+        xnew, ynew, dum, dummer = analyze_stack.plot_ind_shift(xall[cbool,:][ebool,:], yall[cbool,:][ebool,:], fall[cbool,:][ebool,:], pscale=scale)
 
         xmean = []
         xerr = []
@@ -703,6 +705,7 @@ def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, a
                 xr, yr, xnin, ynin, xres, yres, t  = analyze_stack.compare2square(xnin[gbool] , ynin[gbool], trim=False, gspace=gspace, ang=ang)
                 #import pdb;pdb.set_trace()
                 _t = transforms.LegTransform(xnin, ynin, xr, yr, order, xmin=xmin, ymin=ymin, xmax = xmax, ymax=ymax)#,weights=1/(xerr**2+yerr**2)**0.5)
+                _tr =  transforms.LegTransform(xr, yr, xnin, ynin, order, xmin=xmin, ymin=ymin, xmax = xmax, ymax=ymax)
                 xn, yn = _t.evaluate(xnin, ynin)
                 #xn = xnin - _dxn
                 #yn = ynin - _dyn
@@ -729,8 +732,9 @@ def fit_dist_single(coo_txt, order=2, retrans=False, iterate=True, trim=False, a
             _ystd = np.std(_yres)
             
     #import pdb;pdb.set_trace()
-    np.savetxt('Legpx.txt', _t.px.parameters)
-    np.savetxt('Legpy.txt', _t.py.parameters)
+    np.savetxt('Legpx.txt', np.insert(_t.px.parameters, 0, [xmin, xmax]))
+    np.savetxt('Legpy.txt', np.insert(_t.py.parameters, 0, [ymin, ymax]))
+    pickle.dump(_tr, open('distortion.pickle', 'w'))
     _or = Table()
     _or['xm'] = xnin
     _or['ym'] = ynin
@@ -804,7 +808,7 @@ def mkrefcat(num_pin=43, gspace=168.0,  ang=-0.33, outf='reference.txt'):
 
 
 
-def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_pat=True, renorm=True, rot_ang=None, sig_clip=True, debug=False, ind_fits=False, Niter=5, fourp=False, trim_dev_ref_only=False, Nmissing=2, fix_trans=False, plot_ind=True):
+def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_pat=True, renorm=True, rot_ang=None, sig_clip=True, debug=False, ind_fits=False, Niter=5, fourp=False, trim_dev_ref_only=False, Nmissing=2, fix_trans=False, plot_ind=True, rot_offset=True, circle_trim=True):
     '''
     xlis -- list of x coordinates [nframes, npinholes]
     offsets --- list of offsets to translate between each frame
@@ -835,16 +839,16 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
         #cludege to make space match for individual fits
         if np.min(xlis[i]) > xmin:
             xmin = np.min(xlis[i])
-            xmin = 965.148
+            #xmin = 965.148
         if np.max(xlis[i]) < xmax:
             xmax = np.max(xlis[i])
-            xmax = 7263.57
+            #xmax = 7263.57
         if np.min(ylis[i]) > ymin:
             ymin = np.min(ylis[i])
-            ymin = 490.87
+            #ymin = 490.87
         if np.max(ylis[i]) < ymax:
             ymax = np.max(ylis[i])
-            ymax = 5218.0615
+            #ymax = 5218.0615
     #import pdb;pdb.set_trace()
     #hardcode cludge
         #ymax = 5000.0
@@ -867,6 +871,28 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
             
         xlis = xlnN
         ylis = ylnN
+
+    if circle_trim:
+        xlnN = []
+        ylnN = []
+        xrnN = []
+        yrnN = []
+        refidN = []
+        frameNN = []
+        for i in range(len(xlis)):
+            x0 = 4190
+            y0 = 2915
+            rcut = 2800
+            r_sq = (xlis[i] - x0)**2 + (ylis[i] -y0)**2
+                
+            #print(xmin, xmax, ymin, ymax)
+            cbool = r_sq < rcut**2
+            print('Number of measured positions left ', np.sum(cbool))
+            xlnN.append(xlis[i][cbool])
+            ylnN.append(ylis[i][cbool])
+            
+        xlis = xlnN
+        ylis = ylnN
         
     #now iterate through and fit an individual linear polynomial from the reference to the measured frame, save the measured deltas between on detector and square reference.
     #new iteration needs to apply the previous distortion solution ....
@@ -881,13 +907,17 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
         _ang = np.deg2rad(rot_ang[i])
         xang = np.cos(_ang) * xlis[i] - np.sin(_ang) * ylis[i]
         yang = np.sin(_ang) * xlis[i] + np.cos(_ang) * ylis[i]
-        #here we assume that the input offset is 
-        xo = np.cos(_ang) * offsets[i][0] - np.sin(_ang) * offsets[i][1]
-        yo = np.sin(_ang) * offsets[i][0] + np.cos(_ang) * offsets[i][1]
-
+        #here we assume that the input offset is
+        if rot_offset:
+            xo = np.cos(_ang) * offsets[i][0] - np.sin(_ang) * offsets[i][1]
+            yo = np.sin(_ang) * offsets[i][0] + np.cos(_ang) * offsets[i][1]
+        else:
+            xo = offsets[i][0]
+            yo = offsets[i][1]
         #if _ang != 0:
         #    import pdb;pdb.set_trace()
-        idx1, idx2, drm, dr = match.match(xang[cbool] - xo, yang[cbool] - yo,np.zeros(len(xlis[i])), ref['x'], ref['y'], np.zeros(len(ref)),30)
+        idx1, idx2, drm, dr = match.match(xang[cbool] - xo, yang[cbool] - yo,np.zeros(len(xlis[i])), ref['x'], ref['y'], np.zeros(len(ref)),40)
+        assert len(idx2) == len(xang)
         #take out median translation and rematch
         _dx = np.median(xang[cbool][idx1] - ref['x'][idx2])
         _dy = np.median(yang[cbool][idx1] - ref['y'][idx2])
@@ -911,19 +941,20 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
             _xln, _yln = tlin.evaluate(ref['x'][idx2N], ref['y'][idx2N])
             plt.figure(652+i)
             plt.subplot(2, 2, 1)
-            plt.scatter(ref['x'][idx2N], ref['y'][idx2N], c=(xlis[i][idx1N]-_xln)*6000.0)
+            plt.scatter(ref['x'][idx2N], ref['y'][idx2N], c=(xlis[i][idx1N]-_xln)*6000.0, vmin=-3.0*np.std(xlis[i][idx1N]-_xln)*6000.0, vmax=3.0*np.std(xlis[i][idx1N]-_xln)*6000.0)
             plt.colorbar()
+            plt.title('X Deviation from Square wrt grid')
             plt.subplot(2, 2, 2)
             plt.title('Y Deviation from Square wrt grid')
-            plt.scatter(ref['x'][idx2N], ref['y'][idx2N], c=(ylis[i][idx1N]-_yln)*6000.0)
+            plt.scatter(ref['x'][idx2N], ref['y'][idx2N], c=(ylis[i][idx1N]-_yln)*6000.0, vmin=-3.0*np.std(ylis[i][idx1N]-_yln)*6000.0, vmax=3.0*np.std(ylis[i][idx1N]-_yln)*6000.0)
             plt.colorbar()
             plt.subplot(2, 2, 3)
             plt.title('X Deviation from Square wrt camera')
-            plt.scatter(xlis[i][idx1N], ylis[i][idx1N], c=(xlis[i][idx1N]-_xln)*6000.0)
+            plt.scatter(xlis[i][idx1N], ylis[i][idx1N], c=(xlis[i][idx1N]-_xln)*6000.0, vmin=-3.0*np.std(xlis[i][idx1N]-_xln)*6000.0, vmax=3.0*np.std(xlis[i][idx1N]-_xln)*6000.0)
             plt.colorbar()
             plt.subplot(2, 2, 4)
             plt.title('Y Deviation from Square wrt Camera')
-            plt.scatter(xlis[i][idx1N], ylis[i][idx1N], c=(ylis[i][idx1N]-_yln)*6000.0)
+            plt.scatter(xlis[i][idx1N], ylis[i][idx1N], c=(ylis[i][idx1N]-_yln)*6000.0, vmin=-3.0*np.std(ylis[i][idx1N]-_yln)*6000.0, vmax=3.0*np.std(ylis[i][idx1N]-_yln)*6000.0)
             plt.colorbar()
 
             plt.tight_layout()
@@ -1110,7 +1141,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
                 if index_all[kk] in id2:
                     _dummy[kk] = True
             index_all =  index_all[_dummy]
-    assert len(index_all) > 100
+    assert len(index_all) > 50
     print('N sources common to all measurements', len(index_all))
     #now that we have the mask for ref that is only true if the source is in all frames
     index_ref =[]
@@ -1157,6 +1188,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
         #_n = xallR.shape[1]
         #masked such that the pinhole must be in ALL but Nmissing data sets.
         #could (should?) be flipped to a requirement of X measurments
+        #import pdb;pdb.set_trace()
         goodmask = np.sum(_mask,axis=1) < Nmissing + 1
         xave = np.mean(xallR, axis=1)
         yave = np.mean(yallR, axis=1)
@@ -1976,7 +2008,7 @@ def plot_4pv(in_f= 'var_trans_4p.txt'):
 
     fourp = Table.read(in_f, format='ascii.fixed_width')
     #time between images
-    f_space = 10.0
+    f_space = 6.0
     plt.figure(10)
     plt.clf()
     
@@ -2166,12 +2198,12 @@ def legendre(x, order, cart=False):
     elif order ==4:
         return 1/8.0 * (35 * x**4 - 30*x**2 +3)
 
-def plot_sing_fit(incat='fit_cat.txt'):
+def plot_sing_fit(incat='fit_cat.txt', scale=6000.0):
     '''
     '''
 
     cat = Table.read(incat, format='ascii.fixed_width')
-
+    print('pixels are ', scale, ' nm')
     
     plt.figure(1)
     plt.clf()
@@ -2192,28 +2224,93 @@ def plot_sing_fit(incat='fit_cat.txt'):
     plt.title('Y Non-linear Distortion')
 
     plt.subplot(3, 2, 3)
-    plt.scatter(cat['xm'], cat['ym'], c=cat['xres']*9000.0)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['xres']*scale)
     cc = plt.colorbar()
     cc.set_label('residual (nm)')
     plt.title('X Model Residual')
 
     plt.subplot(3, 2, 4)
-    plt.scatter(cat['xm'], cat['ym'], c=cat['yres']*9000.0)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['yres']*scale)
     cc = plt.colorbar()
     cc.set_label('residual (nm)')
     plt.title('Y Model Residual')
 
     plt.subplot(3, 2, 5)
-    plt.scatter(cat['xm'], cat['ym'], c=cat['xerr']*9000.0)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['xerr']*scale)
     cc = plt.colorbar()
     cc.set_label('error (nm)')
     plt.title('X measurement error')
 
     plt.subplot(3, 2, 6)
-    plt.scatter(cat['xm'], cat['ym'], c=cat['yerr']*9000.0)
+    plt.scatter(cat['xm'], cat['ym'], c=cat['yerr']*scale)
     cc = plt.colorbar()
     cc.set_label('error (nm)')
     plt.title('Y measurement error')
 
     plt.tight_layout()
     plt.savefig('single_cat.png')
+
+def test_imaka_sol(mnoise=0.02, y_offsets_end=4):
+    '''
+    mnoise: (pixels)  Standard deviation of the measurement noise per frame 
+    '''
+    _t = pickle.load(open('distortion.pickle', 'r'))
+    refc = Table.read('fit_cat.txt', format='ascii.fixed_width')
+    
+
+    #make list of y offsets
+    y_offsets = np.linspace(0, y_offsets_end, num=50)
+    xm = []
+    ym = []
+    for i in y_offsets:
+        norm_pattern = scipy.stats.norm(loc=0, scale=mnoise)
+        _xerr = norm_pattern.rvs(len(refc['xr']))
+        _yerr = norm_pattern.rvs(len(refc['yr']))
+        _xm, _ym = _t.evaluate(refc['xr'], refc['yr'])
+        _xm = _xm + _xerr
+        _ym = _ym + _yerr + i
+        #need to add in noise
+        xm.append(_xm)
+        ym.append(_ym)
+
+    xm = np.array(xm)
+    ym = np.array(ym)
+    xout = np.zeros(xm.shape)
+    yout = np.zeros(ym.shape)
+    xout[0] = xm[0]
+    yout[0] = ym[0]
+    #need to realign distorted data sets and average them
+    
+    for i in range(len(y_offsets)-1):
+        tl = transforms.PolyTransform(xm[i+1], ym[i+1], xm[0], ym[0], 1)
+        _xn, _yn = tl.evaluate(xm[i+1], ym[i+1])
+        xout[i+1,:] = _xn
+        yout[i+1,:] = _yn
+    #now average the positions
+    xave = np.mean(xout, axis=0)
+    yave = np.mean(yout, axis=0)
+
+    
+    xmin=3000.0
+    xmax=10000.0
+    ymin=1800.0
+    ymax=8400.0
+    tdist = transforms.LegTransform( xave, yave, refc['xr'], refc['yr'], 5, xmin=xmin, ymin=ymin, xmax = xmax, ymax=ymax)
+    _xn, _yn = tdist.evaluate(xave, yave)
+    xres = _xn - refc['xr']
+    yres = _yn - refc['yr']
+
+    
+    _o = Table()
+    _o['xm'] = xave
+    _o['ym'] = yave
+    _o['dx'] = _xn - xave
+    _o['dy'] = _yn - yave
+    _o['xres'] = xres
+    _o['yres'] = yres
+    #import pdb;pdb.pm()
+    _o['xerr'] = np.std(xout, axis=0)
+    _o['yerr'] = np.std(yout, axis=0)
+
+    _o.write('test_fit_cat.txt', format='ascii.fixed_width')
+    plot_sing_fit('test_fit_cat.txt')
