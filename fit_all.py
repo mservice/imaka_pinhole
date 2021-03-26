@@ -50,7 +50,7 @@ def stack_fit(subgroups=10, xkey='xt', ykey='yt', useref=True, infile='/Users/se
                 if useref:
                     _tab =  Table.read(_ff.replace('.lis', '_ref.lis').replace('*', ''), format='ascii.fixed_width')
                 else:
-                    _tab = Table.read(_ff.replace('*', ''), format='ascii.fixed_width')
+                    _tab = Table.read(_ff.replace('*', ''), format='ascmii.fixed_width')
                 dx1 , idx2 , dm, dr = align.match.match(_tab[xkey], _tab[ykey],np.ones(len(_tab[xkey])), xref, yref, np.ones(len(xref)), 20)
                 assert len(idx1) > 300
                 _xall[idx2, jj+1] = _tab[xkey][idx1]
@@ -87,7 +87,7 @@ def stack_fit(subgroups=10, xkey='xt', ykey='yt', useref=True, infile='/Users/se
                 str_f.append(_tab_f)
 
     outdat = np.array(outdat)
-    tfinal = transforms.LegTransform(outdat[0], outdat[1], outdat[2]-outdat[0], outdat[3]-outdat[1], 3)
+    tfinal = transforms.derive_tranforms(transforms.LegTransform, outdat[0], outdat[1], outdat[2]-outdat[0], outdat[3]-outdat[1], 3)
     modx, mody = tfinal.evaluate(outdat[0], outdat[1])
     resx = outdat[2] - outdat[0] - modx
     resy = outdat[3] - outdat[1] - mody
@@ -317,7 +317,7 @@ def simul_ave_fit(xlis, ylis, offsets, order=4, xerr=None, yerr = None, refin=Fa
         
         #print t.cy
         #import pdb;pdb.set_trace()
-        _t = transforms.PolyTransform(xnin, ynin, xres, yres, order)#, weights=1/(xerr[i]**2+yerr[i]**2)**0.5)
+        _t = transforms.LegTransform(xnin, ynin, xres, yres, order)#, weights=1/(xerr[i]**2+yerr[i]**2)**0.5)
         _dxn, _dyn = _t.evaluate(xnin, ynin)
         xn = xnin + _dxn
         yn = ynin + _dyn
@@ -454,7 +454,7 @@ def simul_ave_fit(xlis, ylis, offsets, order=4, xerr=None, yerr = None, refin=Fa
         
     
 
-def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=50, xh=8100, yl=150, yh=8000, ccut=False, flatcut=False, flux_cut=True, flux_cut_level=np.inf, trim_corners=False, trim_bright=True, ecut=False, transoff=False, scale=6000):
+def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=50, xh=8100, yl=150, yh=8000, ccut=False, flatcut=False, flux_cut=True, flux_cut_level=np.inf, trim_corners=False, trim_bright=True,trim_faint=False, ecut=False, transoff=False, scale=6000):
 
    
     if not transoff:
@@ -490,9 +490,12 @@ def mkave(infile = 'obj.lis',outf='average_coo.txt',  x0 = 0, y0=0, r = 0, xl=50
     fm = np.median(fave)
     print('median flux ', fm)
     if trim_bright:
-        fcut = fave < fm + 50000
+        fcut = fave < fm + 100000
     else:
         fcut = np.ones(len(fave), dtype='bool')
+    if trim_faint:
+        fcut *= (fave > fm - 400000)
+        
     print('number of stars cut for being too bright ', len(fcut) - np.sum(fcut))
     cbool = cbool * fcut
 
@@ -808,10 +811,12 @@ def mkrefcat(num_pin=43, gspace=168.0,  ang=-0.33, outf='reference.txt'):
 
 
 
-def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_pat=True, renorm=True, rot_ang=None, sig_clip=True, debug=False, ind_fits=False, Niter=5, fourp=False, trim_dev_ref_only=False, Nmissing=2, fix_trans=False, plot_ind=True, rot_offset=True, circle_trim=True):
+def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_pat=True, renorm=True, rot_ang=None, sig_clip=True, debug=False, ind_fits=False, Niter=5, fourp=False, trim_dev_ref_only=False, Nmissing=2, fix_trans=False,fix_scale=False,rottrans=False, plot_ind=False, rot_offset=True, circle_trim=False, trim_first=False, trim_center=False):
     '''
     xlis -- list of x coordinates [nframes, npinholes]
     offsets --- list of offsets to translate between each frame
+
+    rotrans -- if True, fit only allows for tranlation and rotation
 
     Trimming of the reference catalog occurs in 2 steps -- First step is to only keep pinholes that are in at least nmin images
     Then we trim the image in pixel coordiantes to only smaple the SAME optical distortion
@@ -893,12 +898,28 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
             
         xlis = xlnN
         ylis = ylnN
+
+    if trim_center:
+        xlnN = []
+        ylnN = []
+        xrnN = []
+        yrnN = []
+        refidN = []
+        frameNN = []
+        for i in range(len(xlis)):
+            cbool = np.abs(xlis[i] - 4088) > 30
+            print('Number of measured positions left ', np.sum(cbool))
+            xlnN.append(xlis[i][cbool])
+            ylnN.append(ylis[i][cbool])
+            
+        xlis = xlnN
+        ylis = ylnN
         
     #now iterate through and fit an individual linear polynomial from the reference to the measured frame, save the measured deltas between on detector and square reference.
     #new iteration needs to apply the previous distortion solution ....
 
    
-    ref = Table.read('reference.txt', format='ascii.basic')
+    ref = Table.read('reference.txt', format='ascii.fixed_width')
     
     for i in range(len(xlis)):
        
@@ -916,48 +937,23 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
             yo = offsets[i][1]
         #if _ang != 0:
         #    import pdb;pdb.set_trace()
-        idx1, idx2, drm, dr = match.match(xang[cbool] - xo, yang[cbool] - yo,np.zeros(len(xlis[i])), ref['x'], ref['y'], np.zeros(len(ref)),40)
-        assert len(idx2) == len(xang)
+        idx1, idx2, drm, dr = match.match(xang[cbool] - xo, yang[cbool] - yo,np.zeros(len(xlis[i])), ref['x'], ref['y'], np.zeros(len(ref)),100)
+        
         #take out median translation and rematch
         _dx = np.median(xang[cbool][idx1] - ref['x'][idx2])
         _dy = np.median(yang[cbool][idx1] - ref['y'][idx2])
         idx1N, idx2N, drm, dr = match.match(xang - _dx, yang- _dy,np.zeros(len(xang)), ref['x'], ref['y'], np.zeros(len(ref)),100)
-        assert len(idx1) > 350
+        #assert len(idx2N) == len(xang)
+        #assert len(idx1) > 350
         assert len(idx1N) >= len(idx1)
 
-        t = transforms.LegTransform(ref['x'][idx2N], ref['y'][idx2N] ,  xlis[i][idx1N], ylis[i][idx1N], order)
+
+        
+        t = transforms.LegTransform.derive_transform(ref['x'][idx2N], ref['y'][idx2N] ,  xlis[i][idx1N], ylis[i][idx1N], order)
             
             
         if plot_ind:
-            plt.figure(155)
-            plt.clf()
-            plt.scatter(xang-xo, yang-yo, s=1, label='measured')
-            plt.scatter(ref['x'], ref['y'], s=1, label='data')
-            plt.show()
-            #import pdb;pdb.set_trace()
-            
-            #perform individual fit for each catalog and (optionally) use the outliers sigma trim outliers
-            tlin =  transforms.LegTransform(ref['x'][idx2N], ref['y'][idx2N] ,  xlis[i][idx1N], ylis[i][idx1N], 1)
-            _xln, _yln = tlin.evaluate(ref['x'][idx2N], ref['y'][idx2N])
-            plt.figure(652+i)
-            plt.subplot(2, 2, 1)
-            plt.scatter(ref['x'][idx2N], ref['y'][idx2N], c=(xlis[i][idx1N]-_xln)*6000.0, vmin=-3.0*np.std(xlis[i][idx1N]-_xln)*6000.0, vmax=3.0*np.std(xlis[i][idx1N]-_xln)*6000.0)
-            plt.colorbar()
-            plt.title('X Deviation from Square wrt grid')
-            plt.subplot(2, 2, 2)
-            plt.title('Y Deviation from Square wrt grid')
-            plt.scatter(ref['x'][idx2N], ref['y'][idx2N], c=(ylis[i][idx1N]-_yln)*6000.0, vmin=-3.0*np.std(ylis[i][idx1N]-_yln)*6000.0, vmax=3.0*np.std(ylis[i][idx1N]-_yln)*6000.0)
-            plt.colorbar()
-            plt.subplot(2, 2, 3)
-            plt.title('X Deviation from Square wrt camera')
-            plt.scatter(xlis[i][idx1N], ylis[i][idx1N], c=(xlis[i][idx1N]-_xln)*6000.0, vmin=-3.0*np.std(xlis[i][idx1N]-_xln)*6000.0, vmax=3.0*np.std(xlis[i][idx1N]-_xln)*6000.0)
-            plt.colorbar()
-            plt.subplot(2, 2, 4)
-            plt.title('Y Deviation from Square wrt Camera')
-            plt.scatter(xlis[i][idx1N], ylis[i][idx1N], c=(ylis[i][idx1N]-_yln)*6000.0, vmin=-3.0*np.std(ylis[i][idx1N]-_yln)*6000.0, vmax=3.0*np.std(ylis[i][idx1N]-_yln)*6000.0)
-            plt.colorbar()
-
-            plt.tight_layout()
+            plot_lin(xang, yang, ref, idx2N, idx1N)
 
         xnin = xlis[i][idx1N]
         ynin = ylis[i][idx1N]
@@ -1006,7 +1002,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
     pingood = []
     
     for i in pinid:
-        if np.sum(rflat == i) >= len(xln):
+        if np.sum(rflat == i) >= len(xln)-Nmissing:
             pingood.append(i)
     pbool = []
     for i in range(len(refid)):
@@ -1039,79 +1035,94 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
     
    
 
-    if not fourp:
-        init_guess = guess_co(xln, yln, xrn, yrn, order=order) #offsets,rot_ang, order=order)
-        res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, fix_trans, init_guess, order))
-        xdatR, ydatR, xrefR, yrefR = com_mod(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess)
-    else:
-        init_guess = guess_co_4p(offsets, rot_ang, order=order)
-        res = leastsq(com_mod_4p, init_guess, args=(xln, yln, xrn, yrn,fix_trans, init_guess, order))
-        xdatR, ydatR, xrefR, yrefR = com_mod_4p(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess)
-
-    #import pdb;pdb.set_trace()
-    xresIF = []
-    yresIF = []
-    xlall = []
-    ylall = []
-    refidall = []
-    frameall = []
-    for i in range(len(xdatR)):
+    if trim_first:
+        init_guess = guess_co_leg(xln, yln, xrn, yrn, order=order, fourp=fourp, rottrans=rottrans) #offsets,rot_ang, order=order)
+        res = leastsq(com_mod_leg, init_guess, args=(xln, yln, xrn, yrn, fix_trans, init_guess, order, fourp, rottrans))
+        xdatR, ydatR, xrefR, yrefR = com_mod_leg(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess, fourp=fourp,rottrans=rottrans, fix_scale=fix_scale)
+        xresIF = []
+        yresIF = []
+        xlall = []
+        ylall = []
+        refidall = []
+        frameall = []
+        for i in range(len(xdatR)):
             
-        xresIF.append(xdatR[i] - xrefR[i])
-        yresIF.append(ydatR[i] - yrefR[i])
-        xlall.append(xln[i])
-        ylall.append(yln[i])
-        refidall.append(refid[i])
-        frameall.append(frameN[i])
-    xresIF = np.array(xresIF)
-    yresIF = np.array(yresIF)
+            xresIF.append(xdatR[i] - xrefR[i])
+            yresIF.append(ydatR[i] - yrefR[i])
+            xlall.append(xln[i])
+            ylall.append(yln[i])
+            refidall.append(refid[i])
+            frameall.append(frameN[i])
+        xresIF = np.array(xresIF)
+        yresIF = np.array(yresIF)
         #do single round of sigma clipping on residuals
 
-    xlnN = []
-    ylnN = []
-    xrnN = []
-    yrnN = []
+        xlnN = []
+        ylnN = []
+        xrnN = []
+        yrnN = []
     
-    for i in range(len(xdatR)):
-           
+        for i in range(len(xdatR)):
+        
             #the mean of the residuals is very close to zero
-        _xres =xresIF[i]
-        _yres = yresIF[i]
-        _xstd = np.std(_xres)
-        _ystd =  np.std(_yres)
-        _xa, _xe= stats.mean_std_clip(_xres)
-        _ya, _ye = stats.mean_std_clip(_yres)
+            _xres =xresIF[i]
+            _yres = yresIF[i]
+            _xstd = np.std(_xres)
+            _ystd =  np.std(_yres)
+            _xa, _xe= stats.mean_std_clip(_xres)
+            _ya, _ye = stats.mean_std_clip(_yres)
 
-        if sig_clip:
-            _gbool = (_xres < 5 * _xe + _xa) * (_xres > -5 * _xe + _xa) * (_yres < 5 * _ye + _ya) * (_yres > -5 * _ye + _ya)
-        else:
-            _gbool = np.ones(len(_xres), dtype='bool')
-        print('trimming ', len(_gbool) - np.sum(_gbool) ,' for frame ', i)
+            if sig_clip:
+                _gbool = (_xres < 5 * _xe + _xa) * (_xres > -5 * _xe + _xa) * (_yres < 5 * _ye + _ya) * (_yres > -5 * _ye + _ya)
+            else:
+                _gbool = np.ones(len(_xres), dtype='bool')
+            print('trimming ', len(_gbool) - np.sum(_gbool) ,' for frame ', i)
         
-
-    #print('trimming ', len(tgbool) - np.sum(tgbool))
-        
-        #trim the arguments
     
-        xlnN.append(xln[i][_gbool])
-        ylnN.append(yln[i][_gbool])
-        xrnN.append(xrn[i][_gbool])
-        yrnN.append(yrn[i][_gbool])
+            xlnN.append(xln[i][_gbool])
+            ylnN.append(yln[i][_gbool])
+            xrnN.append(xrn[i][_gbool])
+            yrnN.append(yrn[i][_gbool])
 
-    xln = np.array(xlnN)
-    yln = np.array(ylnN)
-    yrn = np.array(yrnN)
-    xrn = np.array(xrnN)
-    #res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, order))
-    if not fourp:
-        init_guess = guess_co(xln, yln, xrn, yrn, order=order)#offsets,rot_ang, order=order)
-        res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, fix_trans, init_guess, order))
-        xdatR, ydatR, xrefR, yrefR = com_mod(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess)
-    else:
-        init_guess = guess_co_4p(offsets, rot_ang, order=order)
-        res = leastsq(com_mod_4p, init_guess, args=(xln, yln, xrn, yrn,fix_trans, init_guess, order))
-        xdatR, ydatR, xrefR, yrefR = com_mod_4p(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess)
+        xln = np.array(xlnN)
+        yln = np.array(ylnN)
+        yrn = np.array(yrnN)
+        xrn = np.array(xrnN)
 
+    #after all preliminary matching/trimming, fit the data
+
+    fit_iterate(ref, xln, yln, xrn, yrn, order, fourp=fourp, rottrans=rottrans, Niter=Niter, fix_trans=fix_trans, fix_scale=fix_scale, Nmissing=Nmissing, dev_pat=dev_pat, debug=debug)
+
+def fit_iterate(ref, xln, yln, xrn, yrn, order, fourp=False,rottrans=False, Niter=1, fix_trans=False, dev_pat=True, Nmissing=100, debug=False, fix_scale=False):
+
+    '''
+    ref -- astropy Table containing the first pass reference star positions (square grid)
+    xln -- measured X positions [nframes, nstars]
+    yln -- measured Y positions [nframes, nstars]
+    xrn -- reference X positions matched to xln
+    yrn -- reference Y positions matched to yln
+    order -- order of Legendre polynomial fit (up to 6)
+
+    keyword args:
+    fourp (bool) - If true 4 parameter transformations are used instead of linear
+    rottrans (bool) - If true only rotation and translation are used to align reference to measured 
+    Niter (int) - Number of iterations 
+    fix_trans (bool):  If true then the linear transformation parameters are held constant at the initial guess 
+    fix_scale (bool): If true then the scale terms in the linear transformation parameters are held constant at the initial guess
+    dev_pat(bool): If False the reference positions are kept in their initial positions
+    
+    '''
+    #now that the matching is done do the actual fit
+    init_guess = guess_co_leg(xln, yln, xrn, yrn, order=order, fourp=fourp, rottrans=rottrans)#offsets,rot_ang, order=order)
+    _out = Table()
+    _out['col0'] = init_guess
+    _out.write('initial_guess.txt', format='ascii.basic')
+    res = leastsq(com_mod_leg, init_guess, args=(xln, yln, xrn, yrn, fix_trans, fix_scale, init_guess, order, fourp, rottrans))
+    xdatR, ydatR, xrefR, yrefR = com_mod_leg(res[0], xln, yln, xrn, yrn, fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess, fourp=fourp, fix_scale=False, rottrans=rottrans)
+    #else:
+    #    init_guess = guess_co_4p(offsets, rot_ang, order=order)
+    #    res = leastsq(com_mod_4p, init_guess, args=(xln, yln, xrn, yrn,fix_trans, init_guess, order))
+    #    xdatR, ydatR, xrefR, yrefR = com_mod_4p(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess)
     _presx = []
     _presy = []
     for jj in range(len(xdatR)):
@@ -1120,15 +1131,10 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
             _presy.append(ydatR[jj][kk] - yrefR[jj][kk])
     print('model residual X ',np.std(_presx)*6000.0, '  Y: ',np.std(_presy)*6000.0)
         
-    #at this stage, we update the reference positions, with some gain g
-    #first match newest refrence xrefR, yrefR with the original reference text file...
-    g = 1.0
-    #first compute the dx/dy based on refid
-
+  
     #I need a boolean mask on the reference pinhole that is True for all pinholes that are in every epoch
-    #Throw an error if there are less than 100 sources in this list!
     all_bool = np.ones(len(ref), dtype='bool')
-    
+    #import pdb;pdb.set_trace()
     for i in range(len(xrn)):
         
         __id1, id2, dm, dr = match.match(xrn[i], yrn[i], np.ones(len(xrn[i])), ref['x'], ref['y'], np.ones(len(ref)), 50)
@@ -1161,11 +1167,11 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
         yallR = np.ma.zeros((len(ref), len(xrn)))-1000000.0
         xallM = np.ma.zeros((len(ref), len(xrn)))-1000000.0
         yallM = np.ma.zeros((len(ref), len(xrn)))-1000000.0
-
+        
         for i in range(len(xrefR)):
 
            #transform the Distortion corrected measured coordinates into the (updated) Reference grid frame 
-           tl = transforms.PolyTransform(xdatR[i][index_ref[i]], ydatR[i][index_ref[i]], xrn[i][index_ref[i]], yrn[i][index_ref[i]], 1)
+           tl = transforms.PolyTransform.derive_transform(xdatR[i][index_ref[i]], ydatR[i][index_ref[i]], xrn[i][index_ref[i]], yrn[i][index_ref[i]], 1)
            _xrm, _yrm = tl.evaluate(xdatR[i], ydatR[i])
            #match the mesured coordiantes to their associated pinhole source
            idx1, idx2, dr, dm = match.match(_xrm, _yrm, np.ones(len(xrefR[i])), ref['x'], ref['y'], np.ones(len(ref)), 50)
@@ -1219,7 +1225,8 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
         ref['yerr'] = np.zeros(len(ref['y'])) - 9999
         ref['xerr'][idx2] = xave_err[goodmask][idx1]
         ref['yerr'][idx2] = yave_err[goodmask][idx1]
-        ref.write('reference_new.txt', format='ascii.basic')
+        ref['N'] = len(xdatR) - np.sum(_mask, axis=1)
+        ref.write('reference_new.txt', format='ascii.fixed_width')
         print('RMS scatter in pinholes measured', np.mean(xave_err[goodmask]), np.mean(yave_err[goodmask]))
         
         plt.figure('l')
@@ -1255,14 +1262,14 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
 
         #temp debug path, save arrays with the files
         #now we are done updating the reference cordinates, repeat the fit
-        if not fourp:
-            init_guess = res[0]
-            res = leastsq(com_mod, init_guess, args=(xln, yln, xrn, yrn, fix_trans, init_guess, order))
-            xdatR, ydatR, xrefR, yrefR = com_mod(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess)
-        else:
-            init_guess = res[0]
-            res = leastsq(com_mod_4p, init_guess, args=(xln, yln, xrn, yrn,fix_trans, init_guess, order))
-            xdatR, ydatR, xrefR, yrefR = com_mod_4p(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess)
+        #if not fourp:
+        init_guess = guess_co_leg(xln, yln, xrn, yrn, order=order, fourp=fourp, rottrans=rottrans)#offsets,rot_ang, order=order)
+        res = leastsq(com_mod_leg, init_guess, args=(xln, yln, xrn, yrn, fix_trans,fix_scale, init_guess, order, fourp, rottrans))
+        xdatR, ydatR, xrefR, yrefR = com_mod_leg(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, fix_scale=fix_scale, order=order, evaluate=True, init_guess=init_guess, fourp=fourp, rottrans=rottrans)
+        #else:
+        #    init_guess = res[0]
+        #    res = leastsq(com_mod_4p, init_guess, args=(xln, yln, xrn, yrn,fix_trans, init_guess, order))
+        #    xdatR, ydatR, xrefR, yrefR = com_mod_4p(res[0], xln, yln, xrn, yrn,fix_trans=fix_trans, order=order, evaluate=True, init_guess=init_guess)
 
 
             
@@ -1287,7 +1294,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
 
     for i in range(len(xln)):
     #Write useful text files
-        _oo = Table(data=[xln[i], yln[i],xrn[i], yrn[i]], names=['x','y','xr','yr'])
+        _oo = Table(data=[xln[i], yln[i],xrn[i], yrn[i], xdatR[i], ydatR[i], xrefR[i], yrefR[i]], names=['x','y','xr','yr','xdr', 'ydr', 'xrr', 'yrr' ])
         _oo.write('mout_'+str(i)+'.txt', format='ascii.basic')
      #save the final paramters to an output file
     _out = Table(data=[res[0]])
@@ -1308,7 +1315,7 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
     frameall = []
     for i in range(len(xdatR)):
         #must compute the linear tranformation to go from measured coordiantes to refernce coordiantes using ONLY pinhole measured in all frames
-        _tll = transforms.PolyTransform(xdatR[i], ydatR[i], xrn[i], yrn[i], 1)
+        _tll = transforms.PolyTransform.derive_transform(xdatR[i], ydatR[i], xrn[i], yrn[i], 1)
         _xml, _yml = _tll.evaluate(xdatR[i], ydatR[i])
         for jj in range(len(xdatR[i])):
             xresIF.append(xdatR[i][jj] - xrefR[i][jj])
@@ -1317,11 +1324,14 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
             ylall.append(yln[i][jj])
             xrall.append(xrn[i][jj])
             yrall.append(yrn[i][jj])
-            refidall.append(refid[i][jj])
-            frameall.append(frameN[i][jj])
-            xmeas_ref_res.append(_xml[jj] - xrn[i][jj])
-            ymeas_ref_res.append(_yml[jj] - yrn[i][jj])
+            
+    print('X Residual for sim fit 6 par removed', np.std(xresIF)*6000.0 , ' nm')
+    print('Y Residual for sim fit 6 par removed', np.std(yresIF)*6000.0 , ' nm')
 
+    if debug:
+        return res
+    return
+ 
     frameall = np.array(frameall)
     xresIF = np.array(xresIF)
     yresIF = np.array(yresIF)
@@ -1331,10 +1341,6 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
     xmeas_ref_res = np.array(xmeas_ref_res)
     ymeas_ref_res = np.array(ymeas_ref_res)
             
-        
-    print('X Residual for sim fit 6 par removed', np.std(xresIF)*6000.0 , ' nm')
-    print('Y Residual for sim fit 6 par removed', np.std(yresIF)*6000.0 , ' nm')
-
     _sigx = np.std(xresIF)
     _meanx = np.median(xresIF)
     ggx = (xresIF > _meanx - 4 * _sigx) * (xresIF < _meanx + 4 * _sigx)
@@ -1393,6 +1399,164 @@ def simul_wref(xlis, ylis, offsets, order=4, trim_pin=True, trim_cam=True, dev_p
         return res
     return
 
+
+def fit_iter_simple(ref, xln, yln, xrn, yrn, order, fourp=False, Niter=1, fix_trans=False, dev_pat=True, Nmissing=100):
+
+
+    for i in range(len(xrn)):
+        
+        __id1, id2, dm, dr = match.match(xrn[i], yrn[i], np.ones(len(xrn[i])), ref['x'], ref['y'], np.ones(len(ref)), 50)
+        if i ==0:
+            index_all = np.array(id2)
+        else:
+            #need to find any indexes in index_all which are not in id2
+            _dummy = np.zeros(len(index_all), dtype='bool')
+            for kk in range(len(index_all)):
+                if index_all[kk] in id2:
+                    _dummy[kk] = True
+            index_all =  index_all[_dummy]
+    assert len(index_all) > 50
+    print('N sources common to all measurements', len(index_all))
+    
+    
+    for III in range(Niter):
+        xrm = []
+        yrm = []
+        a = [[],[],[]]
+        b = [[],[],[]]
+        for _i in range(len(xln)):
+            #fit the best full linear fit
+            _tl = transforms.PolyTransform.derive_transform(xrn[_i], yrn[_i], xin[_i], yin[_i], 1)
+            _xrm, _yrm = _tl.evaluate(xrn[i], yrn[i])
+            a[0].append(_tl.px.c0_0.value)
+            a[1].append(_tl.px.c1_0.value)
+            a[2].append(_tl.px.c0_1.value)
+            b[0].append(_tl.py.c0_0.value)
+            b[1].append(_tl.py.c1_0.value)
+            b[2].append(_tl.py.c0_1.value)
+
+        #now fit the distortion polynomial
+        xi = []
+        yi = []
+        xri = []
+        yri = []
+        for jj in range(len(xrm)):
+            for kk in range(len(xrm[jj])):
+                xri.append(xrm[jj][kk])
+                yri.append(yrm[jj][kk])
+                xi.append(xln[jj][kk])
+                yi.append(yln[jj][kk])
+
+                
+        td = transforms.LegTransform.derive_transform(xi, yi, xri, yri, order)
+        pickle.dump(td, open('tdist.txt', 'rb'))
+        xdi, ydi = td.evaluate(xi, yi)
+        xres = np.array(xdi) - np.array(xri)
+        yres = np.array(ydi) - np.array(yri)
+
+        xlnd = []
+        ylns = []
+        for zz in range(len(xrn)):
+            #create  distortion corrected coordinates
+            _xd, _yd = td.evaluate(xln[i], yln[i])
+            xlnd.append(_xd)
+            ylnd.append(_yd)
+
+        xallR = np.ma.zeros((len(ref), len(xrn)))-1000000.0
+        yallR = np.ma.zeros((len(ref), len(xrn)))-1000000.0
+        xallM = np.ma.zeros((len(ref), len(xrn)))-1000000.0
+        yallM = np.ma.zeros((len(ref), len(xrn)))-1000000.0
+
+        
+        for i in range(len(xr)):
+
+           #transform the Distortion corrected measured coordinates into the (updated) Reference grid frame 
+           tl = transforms.PolyTransform.derive_transform(xlnd[i][index_ref[i]], ylnd[i][index_ref[i]], xrn[i][index_ref[i]], yrn[i][index_ref[i]], 1)
+           _xrm, _yrm = tl.evaluate(xdatR[i], ydatR[i])
+           #match the mesured coordiantes to their associated pinhole source
+           idx1, idx2, dr, dm = match.match(_xrm, _yrm, np.ones(len(xrefR[i])), ref['x'], ref['y'], np.ones(len(ref)), 50)
+           idxN.append(idx1)
+           idx_ref.append(idx2)
+           #add in measurments to the appropriate array 
+           xallR[idx2,i] = xrn[i][idx1] 
+           yallR[idx2,i] = yrn[i][idx1]
+           #note, these are the linearly corrected positions in the reference pinhole frame -- they should only be computed over a common set of pinholes --
+           xallM[idx2,i] = _xrm[idx1] 
+           yallM[idx2,i] = _yrm[idx1] 
+
+        _mask = xallR == -1000000.0
+        xallR.mask = _mask
+        yallR.mask = _mask
+        xallM.mask = _mask
+        yallM.mask = _mask
+
+        #need mask to prevent reference positions with only 1 measurment from being iteratively updated
+        #_n = xallR.shape[1]
+        #masked such that the pinhole must be in ALL but Nmissing data sets.
+        #could (should?) be flipped to a requirement of X measurments
+        #import pdb;pdb.set_trace()
+        goodmask = np.sum(_mask,axis=1) < Nmissing + 1
+        xave = np.mean(xallR, axis=1)
+        yave = np.mean(yallR, axis=1)
+        xave_err = np.std(xallM, axis=1)
+        yave_err = np.std(yallM, axis=1)
+
+        #this averages the measurements of each pinhole, but with the translation subtracted for each set of pinbholes common to all frames
+        #No longer neccessarey because the linear transformation (tl) is only computed over a common set of stars.
+        dx = (xallM-xallR) #- _mean_dx
+        dy = (yallM-yallR) #- _mean_dy
+        dx = np.mean(dx, axis=1)
+        dy = np.mean(dy, axis=1)
+        
+        #import pdb;pdb.set_trace()
+        
+    
+        print('average delta of refernce coordinates')
+        print(np.mean(dx[goodmask]), np.mean(dy[goodmask]))
+        print('RMS scatter in change in reference coordinates')
+        print(np.std(dx[goodmask]), np.std(dy[goodmask]))
+        
+
+        #import pdb;pdb.set_trace()
+        idx1, idx2 , dm, dr = match.match(xave[goodmask], yave[goodmask], np.ones(len(xave))[goodmask], ref['x'], ref['y'], np.ones(len(ref)), 50)
+        ref['x'][idx2]=  ref['x'][idx2] + dx[goodmask][idx1]* g
+        ref['y'][idx2] = ref['y'][idx2] + dy[goodmask][idx1]*g
+        ref['xerr'] = np.zeros(len(ref['x'])) - 9999
+        ref['yerr'] = np.zeros(len(ref['y'])) - 9999
+        ref['xerr'][idx2] = xave_err[goodmask][idx1]
+        ref['yerr'][idx2] = yave_err[goodmask][idx1]
+        ref['N'] = len(xdatR) - np.sum(_mask, axis=1)
+        ref.write('reference_new.txt', format='ascii.basic')
+        print('RMS scatter in pinholes measured', np.mean(xave_err[goodmask]), np.mean(yave_err[goodmask]))
+        
+        plt.figure('l')
+        plt.clf()
+        plt.title("X reference offset for step"+str(III))
+        plt.scatter(ref['x'], ref['y'], c=dx)
+        plt.colorbar()
+        plt.figure('z')
+        plt.title("Y reference offset for step"+str(III))
+        plt.clf()
+        plt.scatter(ref['x'], ref['y'], c=dy)
+        plt.colorbar()
+        plt.show()
+
+        #import pdb;pdb.set_trace()
+        #now match to the reference and apply the deltas with gain factor g
+        xrnn = []
+        yrnn = []
+        #import pdb;pdb.set_trace()
+        for gg in range(len(xrn)):
+            
+            idx1, idx2 , dm, dr = match.match(xave[goodmask], yave[goodmask], np.ones(len(xave)), xrn[gg], yrn[gg], np.ones(len(xrn[gg])), 50)
+            _xrnn = xrn[gg]
+            _xrnn[idx2]=  _xrnn[idx2] +  dx[goodmask][idx1]* g
+            _yrnn = yrn[gg]
+            _yrnn[idx2] = _yrnn[idx2] + dy[goodmask][idx1]*g
+            xrnn.append(_xrnn)
+            yrnn.append(_yrnn)
+
+                
 def fixref(ref, rdictx, rdicty, nmin=1, plot_cor=True, fit_pol=False, update=True):
     '''
     '''
@@ -1416,7 +1580,7 @@ def fixref(ref, rdictx, rdicty, nmin=1, plot_cor=True, fit_pol=False, update=Tru
         ref['y'][refid] = ref['y'][refid] + 0.5 * np.array(dy)
     else:
         #fit 2nd orde rpolynoimial to the residuals as  s dunction fo pix
-        tdist = transforms.LegTransform(ref['x'][refid], ref['y'][refid], np.array(dx), np.array(dy), 2 )
+        tdist = transforms.LegTransform.derive_transform(ref['x'][refid], ref['y'][refid], np.array(dx), np.array(dy), 2 )
         _dx, _dy = tdist.evaluate(ref['x'][refid], ref['y'][refid])
         ref['x'][refid] = ref['x'][refid] + _dx
         ref['y'][refid] = ref['y'][refid] + _dy
@@ -1427,7 +1591,7 @@ def fixref(ref, rdictx, rdicty, nmin=1, plot_cor=True, fit_pol=False, update=Tru
     #now there are two choices.  either apply the correction to the reference pi
 
 
-def com_mod4p(co, xin, yin, xr, yr,fix_trans=False, init_guess=None ,order = 2,evaluate=False):
+def com_mod_4p(co, xin, yin, xr, yr,fix_trans=False, init_guess=None ,order= 2,evaluate=False):
     '''
     add in deviations a a function of xr , yr up to second order ...
     drx =  c1 * x**2 + c2 * x*y + c3 * y**2
@@ -1616,7 +1780,215 @@ def com_mod(co, xin0, yin0, xr0, yr0, fix_trans=False, init_guess=None, order= 2
     #tot = np.abs(np.array(tot))
  
     return tot
+
+
+def com_mod_leg(co, xin0, yin0, xr0, yr0, fix_trans=False, fix_scale=False,init_guess=None, order= 2,fourp=False, rottrans=False, evaluate=False, xnormfac=4000.0, ynormfac=4000.0, ret_dist=False):
+    '''
+    add in deviations a a function of xr , yr up to second order ...
+    drx =  c1 * x**2 + c2 * x*y + c3 * y**2
+    same for dry (c4-c6), this does not include globale terms (scale or offsts
+    '''
+
+   
+
+    xlin = []
+    ylin = []
+    xin = []
+    yin = []
+    xr = []
+    yr = []
+    #first apply the distortion correction
+    #first normalize the input and output coordinates
+    for i in range(len(xin0)):
+        xin.append((xin0[i] - 4000.)/xnormfac)
+        yin.append((yin0[i]- 3000.)/ynormfac)
+
+        xr.append((xr0[i]  - 4000.)/xnormfac)
+        yr.append((yr0[i]  - 3000.)/ynormfac)
+        
+    xin = np.array(xin)
+    yin = np.array(yin)
+    xr = np.array(xr)
+    yr = np.array(yr)
+    xrL = []
+    yrL = []
+    
+    for i in range(xin.shape[0]):
+        if not fourp and not rottrans:
+            if not fix_trans:
+                tx = (co[6*i])#/xnormfac
+                ty = (co[6*i+3])#/ynormfac
+            else:
+                tx = (init_guess[6*i])#/xnormfac
+                ty = (init_guess[6*i+3])#/ynormfac
+                #apply the linear scale/rotation coefficients to the measured data points
+                #xlin.append(co[6*i+1] * xin[i] + co[6*i+2] * yin[i] + tx)
+                #ylin.append(co[6*i+4] * xin[i] + co[6*i+5] * yin[i] + ty)
+            if not fix_scale:
+                sxx  = co[6*i+1]
+                sxy  = co[6*i+2]
+                syx  = co[6*i+4]
+                syy  = co[6*i+5]
+            else:
+                sxx  = init_guess[6*i+1]
+                sxy  = init_guess[6*i+2]
+                syx  = init_guess[6*i+4]
+                syy  = init_guess[6*i+5]
+           
+                 #CHANGE switched to applying linear coefficients to the reference data
+            xrL.append(sxx * xr[i] + sxy * yr[i] + tx)
+            yrL.append(syx * xr[i] + syy * yr[i] + ty)
+        #_ang = np.deg2rad(co[4*i+3])
+        elif fourp:
+            if not fix_trans:
+                tx = (co[4*i])
+                ty = (co[4*i+1])
+            else:
+                tx = (init_guess[4*i])
+                ty = (init_guess[4*i+1])
+            if not fix_scale:
+                sx  = co[4*i+2]
+                sy  = co[4*i+3]
+            else:
+                sx  = init_guess[4*i+2]
+                sy  = init_guess[4*i+3]
+                
+                
+            xrL.append(tx + sx * xr[i] +  sy * yr[i])
+            yrL.append(ty + sx * yr[i] -  sy * xr[i])
+        else:
+            tx = co[3*i]
+            ty = co[3*i+1]
+            co[3*i+2]= co[3*i+2] % 360
+            _ang = np.deg2rad(co[3*i+2])
+            xrL.append(tx + np.cos(_ang) * xr[i] - np.sin(_ang) * yr[i])
+            yrL.append(ty + np.cos(_ang) * yr[i] + np.sin(_ang) * xr[i])
+            #import pdb;pdb.set_trace()
+        #xlin.append(co[4*i] + co[4*i+2] * (np.cos(_ang) * xin[i]  - np.sin(_ang) * yin[i]))
+        #ylin.append(co[4*i+1] + co[4*i+2] * (np.sin(_ang) * xin[i] + np.cos(_ang) * yin[i]))
+    #import pdb;pdb.set_trace()
+
+    xn = []
+    yn = []
+    if not fourp and not rottrans:
+        i_f = 6 * i  + 6
+    elif fourp:
+        i_f = 4 * (i + 1)
+    elif rottrans:
+        i_f = 3 * (i + 1)
+    #if four parameter fit need to enforce the condition that the linear terms conserve total scale
+    if fourp:
+        #linear x term
+        _xmag = (co[i_f+1]**2 + co[i_f+(order+1)]**2)**0.5
+        _ymag = (co[i_f+(order+1)**2+order+1]**2 + co[i_f+(order+1)**2+1]**2)**0.5
+        #Demand the on axis linear term is 1 -- can still change the skew using the linear cross terms
+        co[i_f+(order+1)**2+1] = 1.0
+        co[i_f+order+1] =  1.0
+    #if we only allow for rotation and translatoin, need the linear scale terms in the distoriton solution
+    for kk in range(xin.shape[0]):
+        #apply the camera distortion correction as a function of the (normalized) input coordinates.
+        #go add polynomial terms for every combination 
+        if not fourp:
+            _xsum = np.copy(xin[kk])
+            _ysum = np.copy(yin[kk])
+        else:
+            _xsum = np.zeros(len(xin[kk]))
+            _ysum = np.zeros(len(xin[kk]))
+        #import pdb;pdb.set_trace()
+        if order == 1:
+            xn.append(xin[kk])
+            yn.append(yin[kk])
+        else:
+            for ii in range(order+1):
+                for jj in range(order+1):
+                    _cur_ord = ii + jj
+                    #if there are full linear terms for each catalog we do not include linear and lower terms in the distortion solutions
+                    #if we used a four parameter we need to include the linear terms, but still need to skip the dc term
+                    if _cur_ord > 1 or ((fourp or rottrans) and _cur_ord > 0):
+                    #print('current x index', i_f+(order+1)*ii+jj)
+                    #print('current y index', i_f+(order+1)**2+(order+1)*ii+jj)
+                        _xsum += co[i_f+(order+1)*ii+jj] * legendre(xin[kk], ii) * legendre(yin[kk], jj)
+                        _ysum += co[i_f+(order+1)**2+(order+1)*ii+jj] * legendre(xin[kk], ii) * legendre(yin[kk], jj)
+                    
+            xn.append(_xsum)
+            yn.append(_ysum)
+
+    xrn = xrL
+    yrn = yrL
+    if ret_dist:
+        xdist = []
+        ydist = []
+        #compute the deviations just from the distortion solution
+        #this is useful for evaluating the solution, but is not used in the model fitting
+        for kk in range(len(xn)):
+            
+            xdist.append((xn[kk] - xin[kk])*xnormfac)
+            ydist.append((yn[kk] - yin[kk])*ynormfac)
+        return xdist, ydist
+
+    if evaluate:
+        #need to renormalize and return the distortion corrected coordiantes (along with the linearly tranformed reference coordinates
+        xnn = []
+        ynn = []
+        xrnn = []
+        yrnn = []
+        for i in range(len(xrn)):
+            xnn.append((xn[i]*xnormfac + 4000))
+            ynn.append((yn[i]*ynormfac + 3000))
+            
+            xrnn.append((xrn[i]*xnormfac + 4000))
+            yrnn.append((yrn[i]*ynormfac + 3000))
+        return np.array(xnn), np.array(ynn), np.array(xrnn), np.array(yrnn)
+    tot = []
+    
+    for jj in range(xin.shape[0]):
+        for kk in range(len(xin[jj])):
+            tot.append(xn[jj][kk] - xrn[jj][kk])
+            tot.append(yn[jj][kk] - yrn[jj][kk])
+    #print('current residual', np.std(tot)*4000.0*6000.0, 'nm')
+   # assert(np.std(tot)*4000.0*6000.0 < 3000)
+    #tot = np.abs(np.array(tot))
+ 
+    return tot
+
+
 def guess_co( xin, yin, xr, yr, order=2):
+    '''
+    Note, rot_ang is the rotation to go from refernce coordiantes to Measured Coorddinates
+    The model applies a linear transformation to go from Measured coordinates to reference coordinates, so the angle needs to be reversed 
+
+    '''
+    co = []
+    #expar = {2:6+4, 3:14+4, 4:24+4}
+    
+    expar = {1:0, 2:6, 3:14, 4:24, 1:0}
+    
+    #for i in range(len(offsets)):
+    #    _ang = 1.0*np.deg2rad(rot_ang[i])
+    #    co.append(0)#-1.0*(offsets[i][0]))#-4000.0)/4000.0)
+    #    co.append(np.cos(_ang))
+    #    co.append(-1.0*np.sin(_ang))
+    #    co.append(0)#-1.0*(offsets[i][1]))#-3000.0)/3000.0)
+    #    co.append(np.sin(_ang))
+    #    co.append(np.cos(_ang))
+    for i in range(len(xin)):
+        t = transforms.PolyTransform.derive_transform(xr[i]-4000, yr[i]-3000, xin[i]-4000, yin[i]-3000, 1)
+        co.append(t.px.c0_0.value/4000.0)
+        co.append(t.px.c1_0.value)
+        co.append(t.px.c0_1.value)
+        co.append(t.py.c0_0.value/4000.0)
+        co.append(t.py.c1_0.value)
+        co.append(t.py.c0_1.value)
+    #add in high order distortion terms
+    for i in range(expar[order]):
+        co.append(0.0)
+
+    #add in  2nd order pattern errors 
+    #for i in range(14):
+    #    co.append(0.0)
+    return np.array(co)
+
+def guess_co_leg( xin, yin, xr, yr, order=2, fourp=False, scale_cor=False, rottrans=False ):
     '''
     Note, rot_ang is the rotation to go from refernce coordiantes to Measured Coorddinates
     The model applies a linear transformation to go from Measured coordinates to reference coordinates, so the angle needs to be reversed 
@@ -1635,16 +2007,57 @@ def guess_co( xin, yin, xr, yr, order=2):
     #    co.append(np.sin(_ang))
     #    co.append(np.cos(_ang))
     for i in range(len(xin)):
-        t = transforms.PolyTransform(xr[i]-4000, yr[i]-3000, xin[i]-4000, yin[i]-3000, 1)
-        co.append(t.px.c0_0.value/4000.0)
-        co.append(t.px.c1_0.value)
-        co.append(t.px.c0_1.value)
-        co.append(t.py.c0_0.value/4000.0)
-        co.append(t.py.c1_0.value)
-        co.append(t.py.c0_1.value)
-    #add in high order distortion terms
-    for i in range(expar[order]):
-        co.append(0.0)
+        if not scale_cor:
+            if not fourp and not rottrans:
+                t = transforms.PolyTransform.derive_transform(xr[i]-4000, yr[i]-3000, xin[i]-4000, yin[i]-3000, 1)
+                co.append(t.px.c0_0.value/4000.0)
+                co.append(t.px.c1_0.value)
+                co.append(t.px.c0_1.value)
+                co.append(t.py.c0_0.value/4000.0)
+                co.append(t.py.c1_0.value)
+                co.append(t.py.c0_1.value)
+                
+            elif fourp:
+                t = transforms.four_paramNW(xr[i]-4000, yr[i]-3000, xin[i]-4000, yin[i]-3000)
+                co.append(t.px[0]/4000.0)
+                co.append(t.py[0]/4000.0)
+                co.append(t.px[1])
+                co.append(t.px[2])
+            else:
+                t = transforms.four_paramNW(xr[i]-4000, yr[i]-3000, xin[i]-4000, yin[i]-3000)
+                co.append(t.px[0]/4000.0)
+                co.append(t.py[0]/4000.0)
+                co.append(np.rad2deg(np.arctan2(-1.0*t.px[2] ,t.px[1])))
+                #import pdb;pdb.set_trace()
+                
+        else:
+            if not fourp:
+                #just get the translation differnece, assume scale and rotation are 0
+                #t = transforms.PolyTransform.derive_transform(xr[i]-4000, yr[i]-3000, xin[i]-4000, yin[i]-3000, 1)
+                dx = np.median(xin[i] - xr[i])
+                dy = np.median(yin[i] - yr[i])
+                co.append(dx/4000.0)
+                co.append(1.0)
+                co.append(0.0)
+                co.append(dy/4000.0)
+                co.append(0.0)
+                co.append(1.0)
+            else:
+                dx = np.median(xin[i] - xr[i])
+                dy = np.median(yin[i] - yr[i])
+                co.append(dx/4000.0)
+                co.append(dy/4000.0)
+                co.append(1.0)
+                co.append(0.0)
+                
+    for i in range(2*(order+1)**2):
+        if fourp:
+            if i == (order+1)*1+0  or i ==  (order+1)**2+1:
+                co.append(1.0)
+            else:
+                co.append(0.0)
+        else:
+            co.append(0.0)
 
     #add in  2nd order pattern errors 
     #for i in range(14):
@@ -1728,8 +2141,8 @@ def plot_lin_dist(ff='fit.txt', mlis='mout.lis', order=3):
     
     for i in range(len(mtab['col1'])):
         _m = Table.read(mtab['col1'][i], format='ascii.basic')
-        _xn = _co[6*i] + _m['x'] * _co[6*i+1] + _m['y'] * _co[6*i+2]
-        _yn = _co[6*i+3] + _m['x'] * _co[6*i+4] + _m['y'] * _co[6*i+5]
+        _xn = _co[6*i] + _m['xr'] * _co[6*i+1] + _m['yr'] * _co[6*i+2]
+        _yn = _co[6*i+3] + _m['xr'] * _co[6*i+4] + _m['yr'] * _co[6*i+5]
 
         #get the deviations from the high order terms of the distoriton solution - this assumes 2nd orde solution
         _hdx =  _co[-6]*_m['x']**2 + _co[-5]*_m['x']*_m['y'] + _co[-4]*_m['y']**2
@@ -1747,10 +2160,11 @@ def plot_lin_dist(ff='fit.txt', mlis='mout.lis', order=3):
         #xl2.append(_co[6*i+2])
         #yl1.append(_co[6*i+4])
         #yl2.append(_co[6*i+5])
-        dx =  _xn - xrefR[i]
-        dy =  _yn - yrefR[i]
-        #dx = dx - np.mean(dx)
-        #dy = dy - np.mean(dy)
+        dx =  _xn - _m['x']
+        dy =  _yn - _m['y']
+        print('Linear residual', np.std(dx), np.std(dy))
+        dx = dx - np.median(dx)
+        dy = dy - np.median(dy)
 
         #import pdb;pdb.set_trace()
 
@@ -1762,8 +2176,8 @@ def plot_lin_dist(ff='fit.txt', mlis='mout.lis', order=3):
        
 
 
-        analyze_stack.mkquiver(_m['x'], _m['y'], dx, dy, fig_n=12, title_s='Linear Residual', scale=.50, scale_size=.01, frac_plot=1, save_f='measured_dist_lin.png', incolor=colors[int(i)], clear=False, scy=1150,scx=0,  xl=500, xh=6500, yh=5300, yl=300, xlab =r'$x_{m}$ (pixels)', ylab=r'$y_{m}$ (pixels)')
-
+        analyze_stack.mkquiver(_m['x'], _m['y'], dx, dy, fig_n=12, title_s='Linear Residual', scale=1.0, scale_size=.1, frac_plot=1, save_f='measured_dist_lin.png', incolor=colors[int(i)], clear=False, scy=1150,scx=0,  xl=500, xh=6500, yh=5300, yl=300, xlab =r'$x_{m}$ (pixels)', ylab=r'$y_{m}$ (pixels)')
+        #import pdb;pdb.set_trace()
         scale_fac = np.std( xdatR[i]-xrefR[i]) * 6000 / 100
         analyze_stack.mkquiver(_m['x'], _m['y'], xdatR[i]-xrefR[i], ydatR[i]-yrefR[i], fig_n=13, title_s='Total Residual', scale=scale_fac*.50, scale_size=scale_fac*.01, frac_plot=1, save_f='total_model_resid.png', incolor=colors[int(i)], clear=False, scy=1150,scx=0,  xl=500, xh=6500, yh=5300, yl=300, xlab =r'$x_{m}$ (pixels)', ylab=r'$y_{m}$ (pixels)')
 
@@ -1881,7 +2295,7 @@ def simul_wref_ind(xlis, ylis, offsets, order=4, trim_pin=True, niter=5, trim_ca
     
     #create the reference coordinates if they are not input
    
-    ref = Table.read('reference.txt', format='ascii.basic')
+    ref = Table.read('reference.txt', format='ascii.fixed_width')
     
     for N in range(niter):
         tt = []
@@ -1925,7 +2339,7 @@ def simul_wref_ind(xlis, ylis, offsets, order=4, trim_pin=True, niter=5, trim_ca
             #plt.show()
         #import pdb;pdb.set_trace()
 
-            t = transforms.LegTransform(ref['x'][idx2N], ref['y'][idx2N] ,  xlis[i][idx1N], ylis[i][idx1N], order)
+            t = transforms.LegTransform.derive_transform(ref['x'][idx2N], ref['y'][idx2N] ,  xlis[i][idx1N], ylis[i][idx1N], order)
             xnin = xlis[i][idx1N]
             ynin = ylis[i][idx1N]
 
@@ -1946,8 +2360,8 @@ def simul_wref_ind(xlis, ylis, offsets, order=4, trim_pin=True, niter=5, trim_ca
                 gbool = np.ones(len(_xres), dtype='bool')
 
                 #recompute the legendre transform
-            t = transforms.LegTransform(xlis[i][idx1N][gbool], ylis[i][idx1N][gbool],ref['x'][idx2N][gbool], ref['y'][idx2N][gbool] ,order)
-            t2 = transforms.LegTransform(ref['x'][idx2N][gbool], ref['y'][idx2N][gbool] , xlis[i][idx1N][gbool], ylis[i][idx1N][gbool], order)
+            t = transforms.LegTransform.derive_transform(xlis[i][idx1N][gbool], ylis[i][idx1N][gbool],ref['x'][idx2N][gbool], ref['y'][idx2N][gbool] ,order)
+            t2 = transforms.LegTransform.derive_transform(ref['x'][idx2N][gbool], ref['y'][idx2N][gbool] , xlis[i][idx1N][gbool], ylis[i][idx1N][gbool], order)
             xn, yn = t.evaluate(xlis[i][idx1N], ylis[i][idx1N])
             tt.append(t)
             _drx = np.zeros(len(ref['x']))-99999
@@ -2015,9 +2429,9 @@ def plot_4pv(in_f= 'var_trans_4p.txt'):
     plt.subplot(131)
     plt.title('Translation Offsets')
     plt.xlabel('Time (s)')
-    plt.ylabel('Translaton Offsets (pixels)')
-    plt.scatter(np.array(range(len(fourp)))*f_space, fourp['a0'], label='x', s=3)
-    plt.scatter(np.array(range(len(fourp)))*f_space, fourp['b0'], label='y', s=3)
+    plt.ylabel(r'Translaton Offsets ($\mu$m)')
+    plt.scatter(np.array(range(len(fourp)))*f_space, 6*fourp['a0'], label='x', s=3)
+    plt.scatter(np.array(range(len(fourp)))*f_space, 6*fourp['b0'], label='y', s=3)
 
     plt.subplot(132)
     plt.title('Rotation')
@@ -2031,10 +2445,14 @@ def plot_4pv(in_f= 'var_trans_4p.txt'):
     plt.xlabel('Time (s)')
     plt.ylabel('Magnification')
     #ang = np.arctan2(-1.0*fourp['a2'],fourp['a1'])
-    plt.scatter(np.array(range(len(fourp)))*f_space, np.sqrt(fourp['a1']**2+fourp['a2']**2), s=3)
+    plt.scatter(np.array(range(len(fourp)))*f_space, (np.sqrt(fourp['a1']**2+fourp['a2']**2)-1)*100+1, s=3)
+    plt.yticks([1-.005, 1, 1+.005], labels=['.99995', '1.0', '1.00005'])
+    plt.ylim((1-.008, 1+.008))
+    plt.tight_layout()
     plt.savefig('4_parameter_variation.png')
     plt.show()
 
+    
 
     plt.figure(11)
     plt.clf()
@@ -2087,7 +2505,7 @@ def mk_lookup(order, infit='fit.txt'):
     ymin = 490.87
     ymax = 5218.0615
     gc = (coo[0] > xmin) * (coo[0] < xmax) * (coo[1] > ymin) * (coo[1] < ymax)
-    t = transforms.PolyTransform(coo[0][gc][::1000], coo[1][gc][::1000], dx[gc][::1000], dy[gc][::1000], 1)
+    t = transforms.PolyTransform.derive_transform(coo[0][gc][::1000], coo[1][gc][::1000], dx[gc][::1000], dy[gc][::1000], 1)
     dxm , dym = t.evaluate(coo[0], coo[1])
     fits.writeto('dx.fits', dx-dxm)
     fits.writeto('dy.fits', dy-dym)
@@ -2111,7 +2529,7 @@ def mklookup_from_trans(t,name='d.fits', xl=500, xh=6500, yl=140, yh=6000,mkfits
     ymin = yl#490.87
     ymax = yh#5218.0615
     gc = (xn > xmin) * (xn < xmax) * (yn > ymin) * (yn < ymax)
-    t = transforms.PolyTransform(xn[gc][::1000], yn[gc][::1000], dx[gc][::1000], dy[gc][::1000], 1)
+    t = transforms.PolyTransform.derive_transform(xn[gc][::1000], yn[gc][::1000], dx[gc][::1000], dy[gc][::1000], 1)
     dxm , dym = t.evaluate(xn, yn)
     if mkfits:
         fits.writeto(name.replace('.fits', '_x.fits'), dx-dxm)
@@ -2141,8 +2559,8 @@ def mksamp(inf='fit.txt', order=3,  xl=965, xh=7263, yl=0, yh=5220, nsources=100
     #ymin = 490.87
     #ymax = 5218.0615
     #gc = (coo[0] > xmin) * (coo[0] < xmax) * (coo[1] > ymin) * (coo[1] < ymax)
-    expar = {1:0, 2:6, 3:14, 4:24, 1:0}
-    in_co = fit_co['col0'][-1*(expar[order]+6):]
+    #expar = {1:0, 2:6, 3:14, 4:24, 1:0}
+    in_co = fit_co['col0'][-1*((order+1)**2*2+6):]
     #import pdb;pdb.set_trace()
     xdist, ydist, dum, dummer = com_mod(in_co, np.array([x]), np.array([y]), np.array([y]), np.array([y]), order=order, evaluate=True)
     _out = Table()
@@ -2150,7 +2568,7 @@ def mksamp(inf='fit.txt', order=3,  xl=965, xh=7263, yl=0, yh=5220, nsources=100
     _out['y']=y
     _out['dx'] = xdist[0]-x
     _out['dy'] = ydist[0]-y
-    _out.write(outf, format='ascii.basic')
+    _out.write(outf, format='ascii.basic', overwrite=True)
     
 
 def complook(l1, l2, x0=3981.17, y0=3089.42, r=2400):
@@ -2175,7 +2593,7 @@ def complook(l1, l2, x0=3981.17, y0=3089.42, r=2400):
     diff = l1[0].data -l2[0].data
     print(np.std(diff[rb])*6000)
     
-    t = transforms.PolyTransform(coo[0][rb], coo[1][rb], diff[rb], np.zeros(len(diff[rb])), 1)
+    t = transforms.PolyTransform.derive_transform(coo[0][rb], coo[1][rb], diff[rb], np.zeros(len(diff[rb])), 1)
     dx, dy = t.evaluate(coo[0][rb], coo[1][rb])
     diff = diff[rb] - dx
     #import pdb;pdb.set_trace()
@@ -2188,7 +2606,8 @@ def legendre(x, order, cart=False):
     '''
     if cart:
         return x**order
-    
+    if order ==0:
+        return 1.0
     if order == 1:
         return x
     elif order ==2:
@@ -2197,7 +2616,10 @@ def legendre(x, order, cart=False):
         return 0.5*(5*x**3 - 3*x)
     elif order ==4:
         return 1/8.0 * (35 * x**4 - 30*x**2 +3)
-
+    elif order ==5:
+        return 1/8.0 * (63 * x**5 - 70*x**3 +15*x)
+    elif order ==6:
+        return 1/16.0 *( 231*x**6 - 325 * x**4 +105*x**2 -5)
 def plot_sing_fit(incat='fit_cat.txt', scale=6000.0):
     '''
     '''
@@ -2207,7 +2629,7 @@ def plot_sing_fit(incat='fit_cat.txt', scale=6000.0):
     
     plt.figure(1)
     plt.clf()
-    t = transforms.PolyTransform(cat['xm'], cat['ym'], cat['dx'], cat['dy'], 1)
+    t = transforms.PolyTransform.derive_transform(cat['xm'], cat['ym'], cat['dx'], cat['dy'], 1)
     dxl, dyl = t.evaluate(cat['xm'], cat['ym'])
 
 
@@ -2282,7 +2704,7 @@ def test_imaka_sol(mnoise=0.02, y_offsets_end=4):
     #need to realign distorted data sets and average them
     
     for i in range(len(y_offsets)-1):
-        tl = transforms.PolyTransform(xm[i+1], ym[i+1], xm[0], ym[0], 1)
+        tl = transforms.PolyTransform.derive_transform(xm[i+1], ym[i+1], xm[0], ym[0], 1)
         _xn, _yn = tl.evaluate(xm[i+1], ym[i+1])
         xout[i+1,:] = _xn
         yout[i+1,:] = _yn
@@ -2295,7 +2717,7 @@ def test_imaka_sol(mnoise=0.02, y_offsets_end=4):
     xmax=10000.0
     ymin=1800.0
     ymax=8400.0
-    tdist = transforms.LegTransform( xave, yave, refc['xr'], refc['yr'], 5, xmin=xmin, ymin=ymin, xmax = xmax, ymax=ymax)
+    tdist = transforms.LegTransform.derive_transform( xave, yave, refc['xr'], refc['yr'], 5, xmin=xmin, ymin=ymin, xmax = xmax, ymax=ymax)
     _xn, _yn = tdist.evaluate(xave, yave)
     xres = _xn - refc['xr']
     yres = _yn - refc['yr']
@@ -2314,3 +2736,147 @@ def test_imaka_sol(mnoise=0.02, y_offsets_end=4):
 
     _o.write('test_fit_cat.txt', format='ascii.fixed_width')
     plot_sing_fit('test_fit_cat.txt')
+
+def plot_lin(xang, yang, ref, idx2N, idx1N):
+            plt.figure(155)
+            plt.clf()
+            plt.scatter(xang-xo, yang-yo, s=1, label='measured')
+            plt.scatter(ref['x'], ref['y'], s=1, label='data')
+            plt.show()
+            #import pdb;pdb.set_trace()
+            
+            #perform individual fit for each catalog and (optionally) use the outliers sigma trim outliers
+            tlin =  transforms.LegTransform.derive_transform(ref['x'][idx2N], ref['y'][idx2N] ,  xlis[i][idx1N], ylis[i][idx1N], 1)
+            _xln, _yln = tlin.evaluate(ref['x'][idx2N], ref['y'][idx2N])
+            plt.figure(652+i)
+            plt.subplot(2, 2, 1)
+            plt.scatter(ref['x'][idx2N], ref['y'][idx2N], c=(xlis[i][idx1N]-_xln)*6000.0, vmin=-3.0*np.std(xlis[i][idx1N]-_xln)*6000.0, vmax=3.0*np.std(xlis[i][idx1N]-_xln)*6000.0)
+            plt.colorbar()
+            plt.title('X Deviation from Square wrt grid')
+            plt.subplot(2, 2, 2)
+            plt.title('Y Deviation from Square wrt grid')
+            plt.scatter(ref['x'][idx2N], ref['y'][idx2N], c=(ylis[i][idx1N]-_yln)*6000.0, vmin=-3.0*np.std(ylis[i][idx1N]-_yln)*6000.0, vmax=3.0*np.std(ylis[i][idx1N]-_yln)*6000.0)
+            plt.colorbar()
+            plt.subplot(2, 2, 3)
+            plt.title('X Deviation from Square wrt camera')
+            plt.scatter(xlis[i][idx1N], ylis[i][idx1N], c=(xlis[i][idx1N]-_xln)*6000.0, vmin=-3.0*np.std(xlis[i][idx1N]-_xln)*6000.0, vmax=3.0*np.std(xlis[i][idx1N]-_xln)*6000.0)
+            plt.colorbar()
+            plt.subplot(2, 2, 4)
+            plt.title('Y Deviation from Square wrt Camera')
+            plt.scatter(xlis[i][idx1N], ylis[i][idx1N], c=(ylis[i][idx1N]-_yln)*6000.0, vmin=-3.0*np.std(ylis[i][idx1N]-_yln)*6000.0, vmax=3.0*np.std(ylis[i][idx1N]-_yln)*6000.0)
+            plt.colorbar()
+
+            plt.tight_layout()
+
+def seplinFdist(moutf='mout.lis', ref='ref_4p.txt'):
+    '''
+    inputs:p
+       reference catalog (?matched to data?)
+       X data measurments
+       order of distortion polynomial
+       
+    #easy choice is to run off mout.txt files
+       they have the measured positions and the updated reference catalog
+       need perfect square version of the reference catalog, this is in ref.txt under xorig/yorig
+    
+    Going Forward is easy.
+    match ref.txt to the xr/yr in mout.lis
+    fit 4 parameter transformtion between ref.txt and measured
+    save the deltas as a function of measrued position
+
+    Fit 1 distortion model for all deltas (techincally should not have scale as free parameter
+    
+    compute model residuals
+    
+    Final step is to update ref.txt -->
+    '''
+    
+    mlis = Table.read(moutf, format='ascii.no_header')
+    ref = Table.read(ref, format='ascii.fixed_width')
+    co = Table.read('fit.txt', format='ascii.basic')['col0']
+    xm = []
+    ym = []
+    delx = []
+    dely = []
+    ID1 = []
+    ID2 = []
+    
+    for i, ff in enumerate(mlis['col1']):
+        #read in data
+        _m = Table.read(ff, format='ascii.basic')
+        #match to the original reference
+        idx1, idx2, dm, dr = match.match(_m['xr'], _m['yr'], _m['xr'], ref['x'], ref['y'], ref['xorig'], 50)
+        #get 4 parameter transformation from ref['x'] to _m['x']
+        #lets just use the best fit linear transformations from the best fit
+        xrin = (ref['x'][idx2][idx1] - 4000)/4000.0
+        yrin = (ref['y'][idx2][idx1] - 3000)/4000.0
+
+        _xn = co[6*i+1] * xrin + co[6*i+2] * yrin + co[6*i]
+        _yn = co[6*i+4] * xrin + co[6*i+5] * yrin + co[6*i+3]
+        _xn *= 4000 +4000
+        _yn *= 4000 + 3000
+        #_xn, _yn = _t.evaluate(ref['x'][idx2][idx1], ref['y'][idx2][idx1])
+        _delx = -1.0*_m['x'] + _xn
+        _dely = -1.0*_m['y'] + _yn
+        ID1.append(idx1)
+        ID2.append(idx2)
+        for ii in range(len(_delx)):
+            xm.append(_m['x'][ii])
+            ym.append(_m['y'][ii])
+            delx.append(_delx[ii])
+            dely.append(_dely[ii])
+            
+    #now fit the distortion polynomial
+    #should I be smoothing like in NIRC2? -- not for now
+    xm = np.array(xm)
+    ym = np.array(ym)
+    delx = np.array(delx)
+    dely = np.array(dely)
+    
+    tdist = transforms.LegTransform.derive_transform(xm, ym, delx, dely, 6)
+    #need to know about these residuals...
+    import pdb;pdb.set_trace()
+    rout = Table()
+    rout['x'] = xm
+    rout['y'] = ym
+    rout['dx'] = delx
+    rout['dy'] = dely
+    _dxm, _dym =  tdist.evaluate(xm, ym)
+    rout['dx_mod'] = _dxm
+    rout['dy_mod'] = _dym
+    rout.write('residuals.txt', format='ascii.basic')
+    
+    #set up the reference position array
+    refx = np.zeros(len(ref))
+    refy = np.zeros(len(ref))
+    N = np.zeros(len(ref))
+    
+    #now invert the process to update the reference positions
+    for i in range(len(mlis['col1'])):
+        #read in data
+        _m = Table.read(mlis['col1'][i], format='ascii.basic')
+        #apply the distortion correction
+        _dx, _dy = tdist.evaluate(_m['x'], _m['y'])
+        xd = _dx + _m['x']
+        yd = _dy + _m['y']
+        #now we want to update the reference coordinate positions
+        _tl = transforms.PolyTransform.derive_transform(xd[ID1[i]], yd[ID1[i]], ref['x'][ID2[i]], ref['y'][ID2[i]], 1)
+        #_tl = transforms.four_paramNW(xd[ID1[i]], yd[ID1[i]], ref['x'][ID2[i]], ref['y'][ID2[i]])
+        _xr, _yr = _tl.evaluate(xd, yd)
+        refx[ID2[i]] += _xr[ID1[i]]
+        refy[ID2[i]] += _yr[ID1[i]]
+        N[ID2[i]] += 1
+        
+    #now divide refx/refy by N to get the mean
+    nb =  N > 0
+    refx[nb] = refx[nb] / N[nb]
+    refy[nb] = refy[nb] / N[nb]
+
+    outf = 'ref_test.txt'
+    out = Table()
+    out['x'] = refx
+    out['y'] = refy
+    out['xorig'] = ref['x']
+    out['yorig'] = ref['y']
+    out['N'] = N
+    out.write(outf, format='ascii.fixed_width')
