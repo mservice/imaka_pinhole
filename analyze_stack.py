@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from flystar_old.flystar_old import align , match, transforms
 from jlu.astrometry import Transform2D as trans
 import matplotlib.animation as manimation
-from scipy.misc import imread
+#from scipy.misc import imread
 from jlu.util import statsIter
 from astropy.io import fits
 import os 
@@ -110,7 +110,7 @@ def mkref(xin, yin, fittype='four',  trim=False, gspace=170, ang=0, ymag=1.07):
     #xn, yn = t.evaluate(xin[idx2], yin[idx2])
     
     #idx1, idx2, dr, dm = match.match(xr-dx, yr-dy, np.ones(len(xr)) , xin , yin, np.ones(len(xin)) , 30)
-    t = transforms.PolyTransform(xin[idx2], yin[idx2], xr[idx1], yr[idx1], 1)
+    t = transforms.PolyTransform.derive_transform(xin[idx2], yin[idx2], xr[idx1], yr[idx1], 1)
     xn, yn = t.evaluate(xin, yin)
 
     idx1, idx2, dr, dm = match.match(xr, yr, np.ones(len(xr)) , xn , yn, np.ones(len(xin)) , 75)
@@ -130,7 +130,7 @@ def mkref(xin, yin, fittype='four',  trim=False, gspace=170, ang=0, ymag=1.07):
         yres = ym - yin[idx2]
         print('4 param residual', np.std(xres) ,  ' pix', np.std(yres), ' pix')
     elif fittype=='linear':
-        t = transforms.PolyTransform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],1)
+        t = transforms.PolyTransform.derive_transform(xr[idx1], yr[idx1], xin[idx2], yin[idx2],1)
         xm, ym = t.evaluate(xr[idx1], yr[idx1])
         xres = xm - xin[idx2]
         yres = ym - yin[idx2]
@@ -580,7 +580,6 @@ def calc_var_n(ar_in, stars_index=None, ind=False):
         _std = []
         mean_pos = []
         while np.sum(imbool) >= nn:
-            #first draw the random group
             #we want to take sequential frames
             g_index = index_ar[imbool][:nn]
             imbool[g_index] = False
@@ -595,12 +594,10 @@ def calc_var_n(ar_in, stars_index=None, ind=False):
         #import pdb;pdb.set_trace()
         mean_pos = np.array(mean_pos)
         _rms_manual = np.mean(np.sqrt(1./(mean_pos.shape[0]-1)*np.sum((np.mean(mean_pos,axis=0)-mean_pos)**2, axis=0)))
-
         _allan_ar = np.zeros(mean_pos.shape[1])
             #first compute the sum of the allan variance equation
         for ii in range(mean_pos.shape[0]-1):
             _allan_ar += (mean_pos[ii,:] - mean_pos[ii+1, :])**2
-
         _allan_ar = np.sqrt(1./(2.*(mean_pos.shape[0]-1.)) * _allan_ar)
         _allan, _allan_err = statsIter.mean_std_clip(_allan_ar)
         _avar.append(_allan)
@@ -696,7 +693,7 @@ def plot_var_from_ar(xshift, yshift, fall , stars_index=None, print_off=True, li
     b = [[],[],[]]
     for i in range(xshift.shape[1]):
         if lin_fit:
-            t = transforms.PolyTransform(xshift[:,i], yshift[:,i], xave, yave, 1)
+            t = transforms.PolyTransform.derive_transform(xshift[:,i], yshift[:,i], xave, yave, 1)
         else:
             t = transforms.four_paramNW(xshift[:,i], yshift[:,i], xave, yave, 1)
             #make this a fit that only allows for rotation and  translation...
@@ -716,7 +713,7 @@ def plot_var_from_ar(xshift, yshift, fall , stars_index=None, print_off=True, li
 
     for i in range(xshift.shape[1]):
         if lin_fit:
-            t = transforms.PolyTransform(xshift[:,i], yshift[:,i], xave, yave, 1)
+            t = transforms.PolyTransform.derive_transform(xshift[:,i], yshift[:,i], xave, yave, 1)
         else:
             t = transforms.four_paramNW(xshift[:,i], yshift[:,i], xave, yave, 1)
             #make this a fit that only allows for rotation and  translation...
@@ -1050,7 +1047,7 @@ def plot_var_cat(inlis='lis.lis', stars_index=None, xkey='x', ykey='y'):
 def stack_cat(inlis):
     lis_lis = Table.read(lis_f, format='ascii.no_header')['col1']
     _ref = Table.read(lis_lis[0], format='ascii.fixed_width')
-    t = transforms.PolyTransform(_ref['xm'], _ref['ym'], _ref[''], _ref[''])
+    t = transforms.PolyTransform.derive_transform(_ref['xm'], _ref['ym'], _ref[''], _ref[''])
     xr = _ref['xm']
     yr = _ref['ym']
     if 'flux' in _ref.keys():

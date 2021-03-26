@@ -1219,8 +1219,8 @@ def fit_iterate(ref, xln, yln, xrn, yrn, order, fourp=False,rottrans=False, Nite
 
         #import pdb;pdb.set_trace()
         idx1, idx2 , dm, dr = match.match(xave[goodmask], yave[goodmask], np.ones(len(xave))[goodmask], ref['x'], ref['y'], np.ones(len(ref)), 50)
-        ref['x'][idx2]=  ref['x'][idx2] + dx[goodmask][idx1]* g
-        ref['y'][idx2] = ref['y'][idx2] + dy[goodmask][idx1]*g
+        ref['x'][idx2]=  ref['x'][idx2] + dx[goodmask][idx1]#* g
+        ref['y'][idx2] = ref['y'][idx2] + dy[goodmask][idx1]#*g
         ref['xerr'] = np.zeros(len(ref['x'])) - 9999
         ref['yerr'] = np.zeros(len(ref['y'])) - 9999
         ref['xerr'][idx2] = xave_err[goodmask][idx1]
@@ -1242,7 +1242,7 @@ def fit_iterate(ref, xln, yln, xrn, yrn, order, fourp=False,rottrans=False, Nite
         plt.show()
 
         #import pdb;pdb.set_trace()
-        #now match to the reference and apply the deltas with gain factor g
+  
         xrnn = []
         yrnn = []
         #import pdb;pdb.set_trace()
@@ -1250,9 +1250,9 @@ def fit_iterate(ref, xln, yln, xrn, yrn, order, fourp=False,rottrans=False, Nite
             
             idx1, idx2 , dm, dr = match.match(xave[goodmask], yave[goodmask], np.ones(len(xave)), xrn[gg], yrn[gg], np.ones(len(xrn[gg])), 50)
             _xrnn = xrn[gg]
-            _xrnn[idx2]=  _xrnn[idx2] +  dx[goodmask][idx1]* g
+            _xrnn[idx2]=  _xrnn[idx2] +  dx[goodmask][idx1]#* g
             _yrnn = yrn[gg]
-            _yrnn[idx2] = _yrnn[idx2] + dy[goodmask][idx1]*g
+            _yrnn[idx2] = _yrnn[idx2] + dy[goodmask][idx1]#*g
             xrnn.append(_xrnn)
             yrnn.append(_yrnn)
 
